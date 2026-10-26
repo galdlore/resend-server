@@ -1,0 +1,59 @@
+{{define "content"}}
+<div class="md-card">
+  <div class="md-card-header">
+    <h2 class="md-card-title">
+      <span class="material-symbols-outlined">history</span>
+      <span>送信履歴</span>
+    </h2>
+    <span class="md-badge md-badge-neutral">{{len .History}} 件</span>
+  </div>
+
+  <div class="md-table-container">
+    <table class="md-table">
+      <thead>
+        <tr>
+          <th>日時</th>
+          <th>送信元 (From)</th>
+          <th>宛先 (To)</th>
+          <th>件名</th>
+          <th>結果</th>
+          <th>詳細</th>
+        </tr>
+      </thead>
+      <tbody>
+        {{range .History}}
+        <tr>
+          <td style="font-size: 0.85rem; color: var(--md-sys-color-outline); white-space: nowrap;">
+            {{.SentAt.Format "2006-01-02 15:04"}}
+          </td>
+          <td>
+            <div>{{.FromAddress}}</div>
+            {{if .FromName}}<div style="font-size: 0.8rem; color: var(--md-sys-color-outline);">{{.FromName}}</div>{{end}}
+          </td>
+          <td>{{.ToAddress}}</td>
+          <td><strong>{{.Subject}}</strong></td>
+          <td>
+            {{if eq .Status "sent"}}
+            <span class="md-badge md-badge-success">成功</span>
+            {{else}}
+            <span class="md-badge md-badge-error">失敗</span>
+            {{end}}
+          </td>
+          <td>
+            <button class="md-btn-icon" title="詳細を表示" hx-get="/api/history/{{.ID}}" hx-target="#modal-container">
+              <span class="material-symbols-outlined" style="font-size: 1.1rem;">visibility</span>
+            </button>
+          </td>
+        </tr>
+        {{else}}
+        <tr>
+          <td colspan="6" style="text-align: center; color: var(--md-sys-color-outline); padding: 2rem;">
+            送信履歴はまだありません
+          </td>
+        </tr>
+        {{end}}
+      </tbody>
+    </table>
+  </div>
+</div>
+{{end}}

@@ -1,0 +1,98 @@
+{{define "content"}}
+<div class="md-card">
+  <div class="md-card-header">
+    <h2 class="md-card-title">
+      <span class="material-symbols-outlined">cloud_sync</span>
+      <span>Google Drive 暗号化バックアップ</span>
+    </h2>
+  </div>
+
+  <div style="background-color: var(--md-sys-color-surface-variant); padding: 1rem; border-radius: var(--md-sys-shape-corner-s); margin-bottom: 1.5rem; font-size: 0.9rem;">
+    <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 0.75rem;">
+      <div>
+        <strong>サービスアカウント鍵:</strong>
+        <span style="color: var(--md-sys-color-primary);">{{.ServiceAccountJSON}}</span>
+      </div>
+      <div>
+        <strong>保存先フォルダID:</strong>
+        <span style="color: var(--md-sys-color-primary);">{{if .FolderID}}{{.FolderID}}{{else}}未設定{{end}}</span>
+      </div>
+      <div>
+        <strong>暗号化方式:</strong>
+        <span>AES-256-GCM (鍵導出: SHA-256)</span>
+      </div>
+      <div>
+        <strong>自動退避間隔:</strong>
+        <span>{{.BackupIntervalMin}} 分ごと</span>
+      </div>
+    </div>
+  </div>
+
+  <div id="backup-result"></div>
+
+  <div style="display: flex; align-items: center; justify-content: flex-end; gap: 1rem;">
+    <div id="backup-spinner" class="htmx-indicator" style="align-items: center; gap: 0.5rem; color: var(--md-sys-color-primary);">
+      <span class="material-symbols-outlined" style="animation: spin 1s linear infinite;">progress_activity</span>
+      <span style="font-size: 0.9rem;">暗号化およびGoogle Driveへ転送中...</span>
+    </div>
+    <button class="md-btn md-btn-primary" hx-post="/api/backup" hx-target="#backup-result" hx-indicator="#backup-spinner">
+      <span class="material-symbols-outlined">upload</span>
+      <span>今すぐGoogle Driveへ暗号化退避</span>
+    </button>
+  </div>
+</div>
+
+<div class="md-card">
+  <div class="md-card-header">
+    <h2 class="md-card-title">
+      <span class="material-symbols-outlined">list_alt</span>
+      <span>バックアップ実行履歴</span>
+    </h2>
+  </div>
+
+  <div class="md-table-container">
+    <table class="md-table">
+      <thead>
+        <tr>
+          <th>実行日時</th>
+          <th>保存ファイル名</th>
+          <th>ファイルサイズ</th>
+          <th>結果</th>
+          <th>備考 / エラー</th>
+        </tr>
+      </thead>
+      <tbody id="backup-logs-table">
+        {{range .Logs}}
+        <tr>
+          <td style="font-size: 0.85rem; color: var(--md-sys-color-outline); white-space: nowrap;">
+            {{.BackedUpAt.Format "2006-01-02 15:04:05"}}
+          </td>
+          <td><code>{{.FileName}}</code></td>
+          <td style="font-size: 0.85rem;">{{if gt .FileSizeBytes 0}}{{.FileSizeBytes}} バイト{{else}}-{{end}}</td>
+          <td>
+            {{if eq .Status "success"}}
+            <span class="md-badge md-badge-success">成功</span>
+            {{else}}
+            <span class="md-badge md-badge-error">失敗</span>
+            {{end}}
+          </td>
+          <td style="font-size: 0.85rem; color: var(--md-sys-color-outline);">
+            {{if .ErrorMessage}}{{.ErrorMessage}}{{else if .GDriveFileID}}ID: {{.GDriveFileID}}{{else}}-{{end}}
+          </td>
+        </tr>
+        {{else}}
+        <tr>
+          <td colspan="5" style="text-align: center; color: var(--md-sys-color-outline); padding: 2rem;">
+            バックアップ履歴はまだありません
+          </td>
+        </tr>
+        {{end}}
+      </tbody>
+    </table>
+  </div>
+</div>
+
+<style>
+@keyframes spin { 100% { transform: rotate(360deg); } }
+</style>
+{{end}}

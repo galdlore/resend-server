@@ -1,0 +1,84 @@
+{{define "content"}}
+<div class="md-card">
+  <div class="md-card-header">
+    <h2 class="md-card-title">
+      <span class="material-symbols-outlined">send</span>
+      <span>メール作成</span>
+    </h2>
+    <span style="font-size: 0.85rem; color: var(--md-sys-color-outline);">
+      {{if .DefaultDomain}}ドメイン: {{.DefaultDomain}}{{end}}
+    </span>
+  </div>
+
+  <div id="send-result"></div>
+
+  <form hx-post="/api/send" hx-target="#send-result" hx-indicator="#send-spinner">
+    <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 1rem;">
+      <div class="md-form-group">
+        <label class="md-label" for="from_select">送信元エイリアス (From)</label>
+        <select class="md-select" id="from_select" onchange="handleFromSelect(this)">
+          <option value="">-- エイリアスを選択 または 下で直接入力 --</option>
+          {{range .Aliases}}
+          <option value="{{.Address}}" data-name="{{.Name}}">{{.Address}} {{if .Name}}({{.Name}}){{end}}</option>
+          {{end}}
+        </select>
+      </div>
+
+      <div class="md-form-group">
+        <label class="md-label" for="from_address">送信元メールアドレス *</label>
+        <input class="md-input" type="email" id="from_address" name="from_address" required placeholder="contact@yourdomain.com">
+      </div>
+    </div>
+
+    <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 1rem;">
+      <div class="md-form-group">
+        <label class="md-label" for="from_name">差出人名 (任意)</label>
+        <input class="md-input" type="text" id="from_name" name="from_name" placeholder="山田 太郎">
+      </div>
+
+      <div class="md-form-group">
+        <label class="md-label" for="to_address">宛先メールアドレス (To) *</label>
+        <input class="md-input" type="email" id="to_address" name="to_address" required placeholder="support@service.example.com">
+      </div>
+    </div>
+
+    <div class="md-form-group">
+      <label class="md-label" for="subject">件名 *</label>
+      <input class="md-input" type="text" id="subject" name="subject" required placeholder="お問い合わせの件">
+    </div>
+
+    <div class="md-form-group">
+      <label class="md-label" for="body">本文 *</label>
+      <textarea class="md-textarea" id="body" name="body" required placeholder="メール本文を入力してください"></textarea>
+    </div>
+
+    <div style="display: flex; align-items: center; justify-content: flex-end; gap: 1rem; margin-top: 1rem;">
+      <div id="send-spinner" class="htmx-indicator" style="align-items: center; gap: 0.5rem; color: var(--md-sys-color-primary);">
+        <span class="material-symbols-outlined" style="animation: spin 1s linear infinite;">progress_activity</span>
+        <span style="font-size: 0.9rem;">送信中...</span>
+      </div>
+      <button type="submit" class="md-btn md-btn-primary">
+        <span class="material-symbols-outlined">send</span>
+        <span>メール送信</span>
+      </button>
+    </div>
+  </form>
+</div>
+
+<script>
+function handleFromSelect(sel) {
+  const addr = sel.value;
+  if (!addr) return;
+  document.getElementById('from_address').value = addr;
+  const opt = sel.options[sel.selectedIndex];
+  const name = opt.getAttribute('data-name');
+  if (name) {
+    document.getElementById('from_name').value = name;
+  }
+}
+</script>
+
+<style>
+@keyframes spin { 100% { transform: rotate(360deg); } }
+</style>
+{{end}}

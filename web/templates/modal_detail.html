@@ -1,0 +1,45 @@
+{{define "modal_detail"}}
+<div class="md-modal-backdrop" onclick="if(event.target === this) closeModal()">
+  <div class="md-modal-dialog">
+    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1rem; padding-bottom: 0.5rem; border-bottom: 1px solid var(--md-sys-color-outline-variant);">
+      <h3 style="font-size: 1.15rem; font-weight: 600; display: flex; align-items: center; gap: 0.5rem;">
+        <span class="material-symbols-outlined">mail</span>
+        <span>送信メール詳細</span>
+      </h3>
+      <button class="md-btn-icon" onclick="closeModal()">
+        <span class="material-symbols-outlined">close</span>
+      </button>
+    </div>
+
+    <div style="margin-bottom: 1rem;">
+      <div style="font-size: 0.85rem; color: var(--md-sys-color-outline);">送信日時: {{.Email.SentAt.Format "2006-01-02 15:04:05"}}</div>
+      <div style="font-size: 0.85rem; color: var(--md-sys-color-outline); margin-top: 0.25rem;">Resend ID: {{if .Email.ResendID}}{{.Email.ResendID}}{{else}}なし{{end}}</div>
+    </div>
+
+    <div style="background-color: var(--md-sys-color-surface-variant); padding: 0.75rem 1rem; border-radius: var(--md-sys-shape-corner-s); margin-bottom: 1rem; font-size: 0.9rem;">
+      <div><strong>From:</strong> {{.Email.FromAddress}} {{if .Email.FromName}}({{.Email.FromName}}){{end}}</div>
+      <div style="margin-top: 0.25rem;"><strong>To:</strong> {{.Email.ToAddress}}</div>
+      <div style="margin-top: 0.25rem;"><strong>Subject:</strong> {{.Email.Subject}}</div>
+    </div>
+
+    {{if .Email.ErrorMessage}}
+    <div class="md-alert md-alert-error" style="margin-bottom: 1rem;">
+      <span class="material-symbols-outlined">error</span>
+      <div>
+        <strong>エラー詳細:</strong>
+        <div>{{.Email.ErrorMessage}}</div>
+      </div>
+    </div>
+    {{end}}
+
+    <div>
+      <div style="font-size: 0.9rem; font-weight: 600; margin-bottom: 0.5rem;">本文 (プレーンテキスト):</div>
+      <pre style="background-color: var(--md-sys-color-surface-variant); padding: 1rem; border-radius: var(--md-sys-shape-corner-s); font-family: inherit; font-size: 0.9rem; white-space: pre-wrap; word-break: break-word; max-height: 250px; overflow-y: auto;">{{.Email.BodyText}}</pre>
+    </div>
+
+    <div style="text-align: right; margin-top: 1.5rem;">
+      <button class="md-btn md-btn-tonal" onclick="closeModal()">閉じる</button>
+    </div>
+  </div>
+</div>
+{{end}}

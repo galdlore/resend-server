@@ -1,0 +1,31 @@
+# バイナリおよびビルド成果物
+*.exe
+*.exe~
+*.dll
+*.so
+*.dylib
+bin/
+dist/
+
+# データベースおよびデータディレクトリ
+data/
+*.db
+*.db-wal
+*.db-shm
+*.db.enc
+
+# 環境変数およびシークレット
+.env
+*.json
+!package*.json
+
+# 開発ツール・IDE設定
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+
+# OS固有ファイル
+Thumbs.db
+.DS_Store

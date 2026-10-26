@@ -1,0 +1,75 @@
+{{define "layout"}}
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>{{.Title}} - Resend Server</title>
+  <!-- Material Symbols Outlined -->
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:opsz,wght,FILL,GRAD@20..48,100..700,0..1,-50..200" />
+  <!-- Google Fonts: Roboto -->
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@400;500;600;700&family=Roboto:wght@400;500;700&display=swap" rel="stylesheet">
+  <!-- Material CSS -->
+  <link rel="stylesheet" href="/static/css/material.css">
+  <!-- HTMX & App JS -->
+  <script src="/static/js/htmx.min.js"></script>
+  <script src="/static/js/app.js"></script>
+</head>
+<body>
+  {{if .IsLoggedIn}}
+  <header class="md-app-bar">
+    <a href="/" class="md-app-bar-brand">
+      <span class="material-symbols-outlined">outgoing_mail</span>
+      <span>Resend Server</span>
+    </a>
+    <nav>
+      <ul class="md-nav-links">
+        <li class="md-nav-item {{if eq .ActiveNav "compose"}}active{{end}}">
+          <a href="/">
+            <span class="material-symbols-outlined">edit_square</span>
+            <span>作成</span>
+          </a>
+        </li>
+        <li class="md-nav-item {{if eq .ActiveNav "aliases"}}active{{end}}">
+          <a href="/aliases">
+            <span class="material-symbols-outlined">alternate_email</span>
+            <span>エイリアス</span>
+          </a>
+        </li>
+        <li class="md-nav-item {{if eq .ActiveNav "history"}}active{{end}}">
+          <a href="/history">
+            <span class="material-symbols-outlined">history</span>
+            <span>送信履歴</span>
+          </a>
+        </li>
+        <li class="md-nav-item {{if eq .ActiveNav "settings"}}active{{end}}">
+          <a href="/settings">
+            <span class="material-symbols-outlined">settings_backup_restore</span>
+            <span>バックアップ</span>
+          </a>
+        </li>
+      </ul>
+    </nav>
+    <div class="md-app-actions">
+      <button class="md-btn-icon" onclick="toggleTheme()" title="テーマ切り替え">
+        <span class="material-symbols-outlined">palette</span>
+      </button>
+      <form action="/logout" method="POST" style="margin: 0;">
+        <button type="submit" class="md-btn-icon" title="ログアウト">
+          <span class="material-symbols-outlined">logout</span>
+        </button>
+      </form>
+    </div>
+  </header>
+  {{end}}
+
+  <main class="md-container">
+    {{template "content" .}}
+  </main>
+
+  <div id="modal-container"></div>
+</body>
+</html>
+{{end}}
