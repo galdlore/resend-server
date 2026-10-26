@@ -98,6 +98,8 @@ func (s *Server) RegisterRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("POST /api/backup", s.handleTriggerBackup)
 	mux.HandleFunc("POST /api/settings/credentials", s.handleUpdateCredentials)
 	mux.HandleFunc("POST /api/settings/resend", s.handleUpdateResendSettings)
+	mux.HandleFunc("POST /api/settings/gdrive", s.handleUpdateGDriveSettings)
+	mux.HandleFunc("POST /api/settings/cleanup", s.handleCleanupDatabase)
 }
 
 func (s *Server) getDefaultDomain() string {
@@ -343,6 +345,9 @@ func (s *Server) handleSettingsPage(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
+	dbSizeBytes, _ := s.db.GetDatabaseSize()
+	dbSizeKB := float64(dbSizeBytes) / 1024.0
+
 	data := map[string]interface{}{
 		"Title":              "環境設定",
 		"IsLoggedIn":         true,
@@ -351,9 +356,10 @@ func (s *Server) handleSettingsPage(w http.ResponseWriter, r *http.Request) {
 		"CurrentUsername":    currentUsername,
 		"MaskedAPIKey":       maskedAPIKey,
 		"DefaultDomain":      s.getDefaultDomain(),
-		"ServiceAccountJSON": s.cfg.GDriveServiceAccountJSON,
-		"FolderID":           s.cfg.GDriveFolderID,
+		"HasGDriveCreds":     s.backupSvc.HasCredentials(),
+		"FolderID":           s.backupSvc.GetFolderID(),
 		"BackupIntervalMin":  s.cfg.BackupIntervalMinutes,
+		"DatabaseSizeKB":     fmt.Sprintf("%.1f", dbSizeKB),
 	}
 	_ = s.templates["settings"].ExecuteTemplate(w, "layout", data)
 }
@@ -417,6 +423,82 @@ func (s *Server) handleUpdateResendSettings(w http.ResponseWriter, r *http.Reque
 	}
 
 	s.renderAlert(w, "success", "Resend APIキーおよびドメイン設定を保存しました（再起動不要で即時反映）")
+}
+
+// Google Drive設定更新API (HTMX)
+func (s *Server) handleUpdateGDriveSettings(w http.ResponseWriter, r *http.Request) {
+	if err := r.ParseForm(); err != nil {
+		s.renderAlert(w, "error", "入力内容の解析に失敗しました")
+		return
+	}
+
+	folderID := strings.TrimSpace(r.FormValue("gdrive_folder_id"))
+	serviceJSON := strings.TrimSpace(r.FormValue("gdrive_service_account_json"))
+	encKey := strings.TrimSpace(r.FormValue("backup_encryption_key"))
+
+	if folderID != "" {
+		if err := s.db.SetSetting("gdrive_folder_id", folderID); err != nil {
+			s.renderAlert(w, "error", fmt.Sprintf("フォルダIDの保存に失敗しました: %v", err))
+			return
+		}
+	}
+
+	if serviceJSON != "" {
+		// JSONとしての最低限の妥当性確認
+		var testMap map[string]interface{}
+		if err := json.Unmarshal([]byte(serviceJSON), &testMap); err != nil {
+			s.renderAlert(w, "error", "サービスアカウント鍵のJSON形式が不正です")
+			return
+		}
+		if err := s.db.SetSetting("gdrive_service_account_json", serviceJSON); err != nil {
+			s.renderAlert(w, "error", fmt.Sprintf("サービスアカウント鍵の保存に失敗しました: %v", err))
+			return
+		}
+	}
+
+	if encKey != "" {
+		if err := s.db.SetSetting("backup_encryption_key", encKey); err != nil {
+			s.renderAlert(w, "error", fmt.Sprintf("暗号化パスフレーズの保存に失敗しました: %v", err))
+			return
+		}
+	}
+
+	s.renderAlert(w, "success", "Google Drive連携設定を保存しました（即時反映）")
+}
+
+// データベースクリーンアップ＆Vacuum実行API (HTMX)
+func (s *Server) handleCleanupDatabase(w http.ResponseWriter, r *http.Request) {
+	if err := r.ParseForm(); err != nil {
+		s.renderAlert(w, "error", "入力内容の解析に失敗しました")
+		return
+	}
+
+	daysStr := r.FormValue("days")
+	days, err := strconv.Atoi(daysStr)
+	if err != nil || days < 0 {
+		s.renderAlert(w, "error", "日数の指定が不正です")
+		return
+	}
+
+	cleanEmails := r.FormValue("clean_sent_emails") == "1"
+	cleanLogs := r.FormValue("clean_backup_logs") == "1"
+
+	if !cleanEmails && !cleanLogs {
+		s.renderAlert(w, "error", "削除対象（送信履歴またはバックアップ履歴）を少なくとも1つ選択してください")
+		return
+	}
+
+	before := time.Now().AddDate(0, 0, -days)
+	deletedEmails, deletedLogs, newSizeBytes, err := s.db.CleanupAndVacuum(before, cleanEmails, cleanLogs)
+	if err != nil {
+		s.renderAlert(w, "error", fmt.Sprintf("最適化処理中にエラーが発生しました: %v", err))
+		return
+	}
+
+	newSizeKB := float64(newSizeBytes) / 1024.0
+	msg := fmt.Sprintf("%d日以前のデータを削除しました（送信履歴: %d件、バックアップ履歴: %d件）。Vacuumを実行し、データベースを最適化しました（現在のサイズ: %.1f KB）。",
+		days, deletedEmails, deletedLogs, newSizeKB)
+	s.renderAlert(w, "success", msg)
 }
 
 // 手動バックアップ実行API (HTMX)

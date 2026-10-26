@@ -363,3 +363,47 @@ func (d *DB) SetSetting(key, value string) error {
 	return err
 }
 
+// GetDatabaseSize は現在のSQLiteファイルのサイズ（バイト単位）を返します。
+func (d *DB) GetDatabaseSize() (int64, error) {
+	info, err := os.Stat(d.path)
+	if err != nil {
+		return 0, err
+	}
+	return info.Size(), nil
+}
+
+// CleanupAndVacuum は指定日時より前の送信履歴やバックアップログを削除し、VACUUMでデータベースファイルを最適化・縮小します。
+func (d *DB) CleanupAndVacuum(before time.Time, cleanSentEmails, cleanBackupLogs bool) (int64, int64, int64, error) {
+	var deletedEmails int64
+	var deletedLogs int64
+
+	if cleanSentEmails {
+		res, err := d.Exec("DELETE FROM sent_emails WHERE sent_at < ?", before)
+		if err != nil {
+			return 0, 0, 0, fmt.Errorf("送信履歴の削除に失敗しました: %w", err)
+		}
+		deletedEmails, _ = res.RowsAffected()
+	}
+
+	if cleanBackupLogs {
+		res, err := d.Exec("DELETE FROM backup_logs WHERE backed_up_at < ?", before)
+		if err != nil {
+			return 0, 0, 0, fmt.Errorf("バックアップ履歴の削除に失敗しました: %w", err)
+		}
+		deletedLogs, _ = res.RowsAffected()
+	}
+
+	// 空き領域の解放とインデックスの再構築（VACUUM）
+	if _, err := d.Exec("VACUUM;"); err != nil {
+		return deletedEmails, deletedLogs, 0, fmt.Errorf("vacuumの実行に失敗しました: %w", err)
+	}
+
+	newSize, err := d.GetDatabaseSize()
+	if err != nil {
+		return deletedEmails, deletedLogs, 0, nil
+	}
+
+	return deletedEmails, deletedLogs, newSize, nil
+}
+
+

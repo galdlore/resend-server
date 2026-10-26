@@ -74,34 +74,113 @@
   </form>
 </div>
 
-<!-- Google Drive 暗号化バックアップ -->
+<!-- Google Drive 連携設定 -->
 <div class="md-card">
   <div class="md-card-header">
     <h2 class="md-card-title">
-      <span class="material-symbols-outlined">cloud_sync</span>
-      <span>Google Drive 暗号化バックアップ</span>
+      <span class="material-symbols-outlined">cloud_upload</span>
+      <span>Google Drive 連携・鍵設定</span>
     </h2>
+    <div>
+      {{if .HasGDriveCreds}}
+      <span class="md-badge md-badge-success">鍵設定済み</span>
+      {{else}}
+      <span class="md-badge md-badge-error">鍵未設定</span>
+      {{end}}
+    </div>
   </div>
 
-  <div style="background-color: var(--md-sys-color-surface-variant); padding: 1rem; border-radius: var(--md-sys-shape-corner-s); margin-bottom: 1.5rem; font-size: 0.9rem;">
-    <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 0.75rem;">
-      <div>
-        <strong>サービスアカウント鍵:</strong>
-        <span style="color: var(--md-sys-color-primary);">{{.ServiceAccountJSON}}</span>
+  <div id="gdrive-settings-result"></div>
+
+  <form hx-post="/api/settings/gdrive" hx-target="#gdrive-settings-result">
+    <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 1rem;">
+      <div class="md-form-group">
+        <label class="md-label" for="gdrive_folder_id">保存先 Google Drive フォルダID</label>
+        <input class="md-input" type="text" id="gdrive_folder_id" name="gdrive_folder_id" value="{{.FolderID}}" placeholder="1a2b3c4d5e6f7g8h9i0j...">
+        <div class="md-form-hint">Google DriveフォルダURLの末尾の英数字</div>
       </div>
-      <div>
-        <strong>保存先フォルダID:</strong>
-        <span style="color: var(--md-sys-color-primary);">{{if .FolderID}}{{.FolderID}}{{else}}未設定{{end}}</span>
-      </div>
-      <div>
-        <strong>暗号化方式:</strong>
-        <span>AES-256-GCM (鍵導出: SHA-256)</span>
-      </div>
-      <div>
-        <strong>自動退避間隔:</strong>
-        <span>{{.BackupIntervalMin}} 分ごと</span>
+
+      <div class="md-form-group">
+        <label class="md-label" for="backup_encryption_key">バックアップ暗号化パスフレーズ</label>
+        <input class="md-input" type="password" id="backup_encryption_key" name="backup_encryption_key" placeholder="暗号化パスフレーズを変更する場合のみ入力">
+        <div class="md-form-hint">AES-256-GCM暗号化で使用するパスフレーズ</div>
       </div>
     </div>
+
+    <div class="md-form-group">
+      <label class="md-label" for="gdrive_service_account_json">サービスアカウント鍵 (JSON)</label>
+      <textarea class="md-textarea" id="gdrive_service_account_json" name="gdrive_service_account_json" style="font-family: monospace; font-size: 0.8rem; min-height: 100px;" placeholder="Google CloudでダウンロードしたサービスアカウントのJSON鍵の内容をそのまま貼り付けてください"></textarea>
+      <div class="md-form-hint">直接貼り付けて保存できます。サーバー上のファイル配置は不要です。</div>
+    </div>
+
+    <div style="text-align: right; margin-top: 0.5rem;">
+      <button type="submit" class="md-btn md-btn-primary">
+        <span class="material-symbols-outlined">save</span>
+        <span>Google Drive設定を保存</span>
+      </button>
+    </div>
+  </form>
+</div>
+
+<!-- データベース最適化・履歴クリーンアップ (Vacuum) -->
+<div class="md-card">
+  <div class="md-card-header">
+    <h2 class="md-card-title">
+      <span class="material-symbols-outlined">cleaning_services</span>
+      <span>データベース保守・履歴クリーンアップ (Vacuum)</span>
+    </h2>
+    <span class="md-badge md-badge-neutral">現在のDBサイズ: {{.DatabaseSizeKB}} KB</span>
+  </div>
+
+  <p style="font-size: 0.875rem; color: var(--md-sys-color-on-surface-variant); margin-bottom: 1.25rem;">
+    蓄積された過去の送信履歴やバックアップ実行ログを指定日数より前の分だけ削除し、SQLiteのVacuumを実行して空き領域を回収・ファイルサイズを縮小します。
+  </p>
+
+  <div id="cleanup-result"></div>
+
+  <form hx-post="/api/settings/cleanup" hx-target="#cleanup-result" hx-confirm="指定された期間より前のログを削除し、データベースのVacuumを実行します。よろしいですか？">
+    <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 1rem; align-items: center;">
+      <div class="md-form-group" style="margin-bottom: 0;">
+        <label class="md-label" for="days">削除対象の期間</label>
+        <select class="md-select" id="days" name="days">
+          <option value="30">30日以前のログを削除</option>
+          <option value="60">60日以前のログを削除</option>
+          <option value="90" selected>90日以前のログを削除</option>
+          <option value="180">180日以前のログを削除</option>
+          <option value="365">1年 (365日) 以前のログを削除</option>
+          <option value="0">すべてのログを削除 (初期化)</option>
+        </select>
+      </div>
+
+      <div style="display: flex; gap: 1.5rem; align-items: center; padding-top: 1.25rem;">
+        <label style="display: flex; align-items: center; gap: 0.5rem; font-size: 0.9rem; cursor: pointer;">
+          <input type="checkbox" name="clean_sent_emails" value="1" checked style="width: 1.1rem; height: 1.1rem; accent-color: var(--md-sys-color-primary);">
+          <span>送信履歴</span>
+        </label>
+        <label style="display: flex; align-items: center; gap: 0.5rem; font-size: 0.9rem; cursor: pointer;">
+          <input type="checkbox" name="clean_backup_logs" value="1" checked style="width: 1.1rem; height: 1.1rem; accent-color: var(--md-sys-color-primary);">
+          <span>バックアップ履歴</span>
+        </label>
+      </div>
+    </div>
+
+    <div style="text-align: right; margin-top: 1.5rem;">
+      <button type="submit" class="md-btn md-btn-tonal" style="color: var(--md-sys-color-error);">
+        <span class="material-symbols-outlined">delete_sweep</span>
+        <span>古いログを削除してVacuum実行</span>
+      </button>
+    </div>
+  </form>
+</div>
+
+<!-- Google Drive バックアップ手動実行＆履歴 -->
+<div class="md-card">
+  <div class="md-card-header">
+    <h2 class="md-card-title">
+      <span class="material-symbols-outlined">sync</span>
+      <span>Google Drive バックアップ手動実行</span>
+    </h2>
+    <span style="font-size: 0.85rem; color: var(--md-sys-color-outline);">自動退避: {{.BackupIntervalMin}} 分ごと</span>
   </div>
 
   <div id="backup-result"></div>

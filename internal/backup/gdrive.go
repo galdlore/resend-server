@@ -8,6 +8,7 @@ import (
 	"log"
 	"os"
 	"path/filepath"
+	"strings"
 	"time"
 
 	"github.com/galdlore/resend-server/internal/crypto"
@@ -17,43 +18,92 @@ import (
 )
 
 type Service struct {
-	db             *db.DB
-	passphrase     string
-	serviceJSON    string
-	folderID       string
-	intervalMin    int
-	stopChan       chan struct{}
+	db                *db.DB
+	defaultPassphrase string
+	defaultFileJSON   string
+	defaultFolderID   string
+	intervalMin       int
+	stopChan          chan struct{}
 }
 
 func NewService(database *db.DB, passphrase, serviceJSON, folderID string, intervalMin int) *Service {
 	return &Service{
-		db:          database,
-		passphrase:  passphrase,
-		serviceJSON: serviceJSON,
-		folderID:    folderID,
-		intervalMin: intervalMin,
-		stopChan:    make(chan struct{}),
+		db:                database,
+		defaultPassphrase: passphrase,
+		defaultFileJSON:   serviceJSON,
+		defaultFolderID:   folderID,
+		intervalMin:       intervalMin,
+		stopChan:          make(chan struct{}),
 	}
+}
+
+// GetFolderID は現在有効なGoogle Drive保存先フォルダIDを返します。
+func (s *Service) GetFolderID() string {
+	if s.db != nil {
+		if id, err := s.db.GetSetting("gdrive_folder_id"); err == nil && id != "" {
+			return id
+		}
+	}
+	return s.defaultFolderID
+}
+
+// GetPassphrase は現在有効なバックアップ暗号化パスフレーズを返します。
+func (s *Service) GetPassphrase() string {
+	if s.db != nil {
+		if p, err := s.db.GetSetting("backup_encryption_key"); err == nil && p != "" {
+			return p
+		}
+	}
+	return s.defaultPassphrase
+}
+
+// HasCredentials はGoogleサービスアカウント鍵（DB登録またはファイル）が存在するかを判定します。
+func (s *Service) HasCredentials() bool {
+	if s.db != nil {
+		if raw, err := s.db.GetSetting("gdrive_service_account_json"); err == nil && strings.TrimSpace(raw) != "" {
+			return true
+		}
+	}
+	if s.defaultFileJSON != "" {
+		if _, err := os.Stat(s.defaultFileJSON); err == nil {
+			return true
+		}
+	}
+	return false
+}
+
+func (s *Service) getClientOption() (option.ClientOption, error) {
+	if s.db != nil {
+		if raw, err := s.db.GetSetting("gdrive_service_account_json"); err == nil && strings.TrimSpace(raw) != "" {
+			return option.WithCredentialsJSON([]byte(raw)), nil
+		}
+	}
+
+	if s.defaultFileJSON != "" {
+		if _, err := os.Stat(s.defaultFileJSON); err == nil {
+			return option.WithCredentialsFile(s.defaultFileJSON), nil
+		}
+	}
+
+	return nil, errors.New("Googleサービスアカウント鍵が登録されていません。設定画面からJSON鍵を登録してください。")
 }
 
 // PerformBackup はデータベースのスナップショットを作成し、AES-256-GCMで暗号化してGoogle Driveへ保存します。
 func (s *Service) PerformBackup(ctx context.Context) error {
-	if s.serviceJSON == "" {
-		err := errors.New("Googleサービスアカウントの鍵ファイルパスが指定されていません")
-		_ = s.db.CreateBackupLog("none", "", 0, "failed", err.Error())
-		return err
-	}
-	if _, err := os.Stat(s.serviceJSON); os.IsNotExist(err) {
-		err := fmt.Errorf("Googleサービスアカウントの鍵ファイルが見つかりません (%s)", s.serviceJSON)
-		_ = s.db.CreateBackupLog("none", "", 0, "failed", err.Error())
-		return err
-	}
-	if s.folderID == "" {
-		err := errors.New("Google Driveの保存先フォルダIDが指定されていません")
+	folderID := s.GetFolderID()
+	if folderID == "" {
+		err := errors.New("Google Driveの保存先フォルダIDが指定されていません。設定画面から登録してください。")
 		_ = s.db.CreateBackupLog("none", "", 0, "failed", err.Error())
 		return err
 	}
 
+	clientOpt, err := s.getClientOption()
+	if err != nil {
+		_ = s.db.CreateBackupLog("none", "", 0, "failed", err.Error())
+		return err
+	}
+
+	passphrase := s.GetPassphrase()
 	timestamp := time.Now().Format("20060102_150405")
 	tempSnapshot := filepath.Join(os.TempDir(), fmt.Sprintf("snapshot_%s.db", timestamp))
 	defer os.Remove(tempSnapshot)
@@ -74,7 +124,7 @@ func (s *Service) PerformBackup(ctx context.Context) error {
 	}
 
 	// 3. AES-256-GCMで暗号化
-	encBytes, err := crypto.Encrypt(rawBytes, s.passphrase)
+	encBytes, err := crypto.Encrypt(rawBytes, passphrase)
 	if err != nil {
 		wrappedErr := fmt.Errorf("バックアップデータの暗号化に失敗しました: %w", err)
 		_ = s.db.CreateBackupLog("encrypt_failed", "", 0, "failed", wrappedErr.Error())
@@ -82,7 +132,7 @@ func (s *Service) PerformBackup(ctx context.Context) error {
 	}
 
 	// 4. Google Driveクライアントの生成
-	driveService, err := drive.NewService(ctx, option.WithCredentialsFile(s.serviceJSON))
+	driveService, err := drive.NewService(ctx, clientOpt)
 	if err != nil {
 		wrappedErr := fmt.Errorf("Google Driveサービスの初期化に失敗しました: %w", err)
 		_ = s.db.CreateBackupLog("drive_init_failed", "", 0, "failed", wrappedErr.Error())
@@ -93,7 +143,7 @@ func (s *Service) PerformBackup(ctx context.Context) error {
 	uploadFileName := fmt.Sprintf("resend_backup_%s.db.enc", timestamp)
 	driveFile := &drive.File{
 		Name:    uploadFileName,
-		Parents: []string{s.folderID},
+		Parents: []string{folderID},
 	}
 
 	resFile, err := driveService.Files.Create(driveFile).
