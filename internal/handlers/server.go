@@ -95,6 +95,8 @@ func (s *Server) RegisterRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("GET /api/history/{id}", s.handleHistoryDetail)
 
 	mux.HandleFunc("GET /settings", s.handleSettingsPage)
+	mux.HandleFunc("GET /api/settings/backup-logs", s.handleGetBackupLogs)
+	mux.HandleFunc("GET /api/settings/db-size", s.handleGetDatabaseSize)
 	mux.HandleFunc("POST /api/backup", s.handleTriggerBackup)
 	mux.HandleFunc("POST /api/settings/credentials", s.handleUpdateCredentials)
 	mux.HandleFunc("POST /api/settings/resend", s.handleUpdateResendSettings)
@@ -333,13 +335,9 @@ func (s *Server) handleHistoryDetail(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
-// 設定・バックアップ画面
-func (s *Server) handleSettingsPage(w http.ResponseWriter, r *http.Request) {
-	logs, err := s.db.ListBackupLogs(30)
-	if err != nil {
-		http.Error(w, "バックアップ履歴の取得に失敗しました", http.StatusInternalServerError)
-		return
-	}
+// 設定画面用データ取得ヘルパー
+func (s *Server) getSettingsData(r *http.Request) map[string]interface{} {
+	logs, _ := s.db.ListBackupLogs(30)
 
 	currentUsername, _ := s.auth.GetCredentials()
 	currentAPIKey := s.mailer.GetAPIKey()
@@ -358,31 +356,92 @@ func (s *Server) handleSettingsPage(w http.ResponseWriter, r *http.Request) {
 	redirectURI := fmt.Sprintf("http://%s/auth/google/callback", r.Host)
 	authURL, _ := s.backupSvc.GetAuthURL(redirectURI)
 
-	data := map[string]interface{}{
-		"Title":              "環境設定",
-		"IsLoggedIn":         true,
-		"ActiveNav":          "settings",
-		"Logs":               logs,
-		"CurrentUsername":    currentUsername,
-		"MaskedAPIKey":       maskedAPIKey,
-		"DefaultDomain":      s.getDefaultDomain(),
-		"HasGDriveCreds":     s.backupSvc.HasCredentials(),
-		"IsOAuthConnected":   s.backupSvc.IsOAuthConnected(),
-		"AuthURL":            authURL,
-		"RedirectURI":        redirectURI,
-		"FolderID":           s.backupSvc.GetFolderID(),
-		"BackupIntervalMin":  s.cfg.BackupIntervalMinutes,
-		"DatabaseSizeKB":     fmt.Sprintf("%.1f", dbSizeKB),
-		"SuccessMsg":         r.URL.Query().Get("success"),
-		"ErrorMsg":           r.URL.Query().Get("error"),
+	return map[string]interface{}{
+		"Title":             "環境設定",
+		"IsLoggedIn":        true,
+		"ActiveNav":         "settings",
+		"Logs":              logs,
+		"CurrentUsername":   currentUsername,
+		"MaskedAPIKey":      maskedAPIKey,
+		"DefaultDomain":     s.getDefaultDomain(),
+		"HasGDriveCreds":    s.backupSvc.HasCredentials(),
+		"IsOAuthConnected":  s.backupSvc.IsOAuthConnected(),
+		"AuthURL":           authURL,
+		"RedirectURI":       redirectURI,
+		"FolderID":          s.backupSvc.GetFolderID(),
+		"BackupIntervalMin": s.cfg.BackupIntervalMinutes,
+		"DatabaseSizeKB":    fmt.Sprintf("%.1f", dbSizeKB),
+		"SuccessMsg":        r.URL.Query().Get("success"),
+		"ErrorMsg":          r.URL.Query().Get("error"),
 	}
+}
+
+// Google Drive カード描画ヘルパー (HTMX)
+func (s *Server) renderGDriveCard(w http.ResponseWriter, r *http.Request, alertType, alertMsg string) {
+	data := s.getSettingsData(r)
+	if alertMsg != "" {
+		data["CardAlert"] = alertMsg
+		data["CardAlertType"] = alertType
+	}
+	w.Header().Set("Content-Type", "text/html; charset=utf-8")
+	_ = s.templates["settings"].ExecuteTemplate(w, "gdrive_card", data)
+}
+
+// Resend カード描画ヘルパー (HTMX)
+func (s *Server) renderResendCard(w http.ResponseWriter, r *http.Request, alertType, alertMsg string) {
+	data := s.getSettingsData(r)
+	if alertMsg != "" {
+		data["ResendAlert"] = alertMsg
+		data["ResendAlertType"] = alertType
+	}
+	w.Header().Set("Content-Type", "text/html; charset=utf-8")
+	_ = s.templates["settings"].ExecuteTemplate(w, "resend_card", data)
+}
+
+// 認証情報カード描画ヘルパー (HTMX)
+func (s *Server) renderCredentialsCard(w http.ResponseWriter, r *http.Request, alertType, alertMsg string) {
+	data := s.getSettingsData(r)
+	if alertMsg != "" {
+		data["CredAlert"] = alertMsg
+		data["CredAlertType"] = alertType
+	}
+	w.Header().Set("Content-Type", "text/html; charset=utf-8")
+	_ = s.templates["settings"].ExecuteTemplate(w, "credentials_card", data)
+}
+
+// 設定・バックアップ画面ハンドラー
+func (s *Server) handleSettingsPage(w http.ResponseWriter, r *http.Request) {
+	data := s.getSettingsData(r)
 	_ = s.templates["settings"].ExecuteTemplate(w, "layout", data)
+}
+
+// バックアップ実行履歴パーシャル取得API (HTMX)
+func (s *Server) handleGetBackupLogs(w http.ResponseWriter, r *http.Request) {
+	logs, err := s.db.ListBackupLogs(30)
+	if err != nil {
+		http.Error(w, "バックアップ履歴の取得に失敗しました", http.StatusInternalServerError)
+		return
+	}
+	w.Header().Set("Content-Type", "text/html; charset=utf-8")
+	_ = s.templates["settings"].ExecuteTemplate(w, "backup_logs_rows", map[string]interface{}{
+		"Logs": logs,
+	})
+}
+
+// データベースサイズバッジパーシャル取得API (HTMX)
+func (s *Server) handleGetDatabaseSize(w http.ResponseWriter, r *http.Request) {
+	dbSizeBytes, _ := s.db.GetDatabaseSize()
+	dbSizeKB := float64(dbSizeBytes) / 1024.0
+	w.Header().Set("Content-Type", "text/html; charset=utf-8")
+	_ = s.templates["settings"].ExecuteTemplate(w, "db_size_badge", map[string]interface{}{
+		"DatabaseSizeKB": fmt.Sprintf("%.1f", dbSizeKB),
+	})
 }
 
 // 認証情報変更API (HTMX)
 func (s *Server) handleUpdateCredentials(w http.ResponseWriter, r *http.Request) {
 	if err := r.ParseForm(); err != nil {
-		s.renderAlert(w, "error", "入力内容の解析に失敗しました")
+		s.renderCredentialsCard(w, r, "error", "入力内容の解析に失敗しました")
 		return
 	}
 
@@ -391,32 +450,32 @@ func (s *Server) handleUpdateCredentials(w http.ResponseWriter, r *http.Request)
 	confirmPass := r.FormValue("confirm_password")
 
 	if username == "" {
-		s.renderAlert(w, "error", "ユーザー名は必須です")
+		s.renderCredentialsCard(w, r, "error", "ユーザー名は必須です")
 		return
 	}
 	if password == "" {
-		s.renderAlert(w, "error", "パスワードを入力してください")
+		s.renderCredentialsCard(w, r, "error", "パスワードを入力してください")
 		return
 	}
 	if password != confirmPass {
-		s.renderAlert(w, "error", "確認用パスワードが一致しません")
+		s.renderCredentialsCard(w, r, "error", "確認用パスワードが一致しません")
 		return
 	}
 
 	if err := s.auth.UpdateCredentials(username, password); err != nil {
-		s.renderAlert(w, "error", fmt.Sprintf("認証情報の更新に失敗しました: %v", err))
+		s.renderCredentialsCard(w, r, "error", fmt.Sprintf("認証情報の更新に失敗しました: %v", err))
 		return
 	}
 
 	// 新しいユーザー名でセッションCookieを再発行
 	s.auth.SetSessionCookie(w, username)
-	s.renderAlert(w, "success", "ユーザー名とパスワードを正常に更新しました")
+	s.renderCredentialsCard(w, r, "success", "ユーザー名とパスワードを正常に更新しました")
 }
 
 // Resend設定更新API (HTMX)
 func (s *Server) handleUpdateResendSettings(w http.ResponseWriter, r *http.Request) {
 	if err := r.ParseForm(); err != nil {
-		s.renderAlert(w, "error", "入力内容の解析に失敗しました")
+		s.renderResendCard(w, r, "error", "入力内容の解析に失敗しました")
 		return
 	}
 
@@ -425,25 +484,25 @@ func (s *Server) handleUpdateResendSettings(w http.ResponseWriter, r *http.Reque
 
 	if apiKey != "" {
 		if err := s.db.SetSetting("resend_api_key", apiKey); err != nil {
-			s.renderAlert(w, "error", fmt.Sprintf("APIキーの保存に失敗しました: %v", err))
+			s.renderResendCard(w, r, "error", fmt.Sprintf("APIキーの保存に失敗しました: %v", err))
 			return
 		}
 	}
 
 	if domain != "" {
 		if err := s.db.SetSetting("default_domain", domain); err != nil {
-			s.renderAlert(w, "error", fmt.Sprintf("ドメインの保存に失敗しました: %v", err))
+			s.renderResendCard(w, r, "error", fmt.Sprintf("ドメインの保存に失敗しました: %v", err))
 			return
 		}
 	}
 
-	s.renderAlert(w, "success", "Resend APIキーおよびドメイン設定を保存しました（再起動不要で即時反映）")
+	s.renderResendCard(w, r, "success", "Resend APIキーおよびドメイン設定を保存しました（即時反映）")
 }
 
 // Google Drive設定更新API (HTMX)
 func (s *Server) handleUpdateGDriveSettings(w http.ResponseWriter, r *http.Request) {
 	if err := r.ParseForm(); err != nil {
-		s.renderAlert(w, "error", "入力内容の解析に失敗しました")
+		s.renderGDriveCard(w, r, "error", "入力内容の解析に失敗しました")
 		return
 	}
 
@@ -453,7 +512,7 @@ func (s *Server) handleUpdateGDriveSettings(w http.ResponseWriter, r *http.Reque
 
 	if folderID != "" {
 		if err := s.db.SetSetting("gdrive_folder_id", folderID); err != nil {
-			s.renderAlert(w, "error", fmt.Sprintf("フォルダIDの保存に失敗しました: %v", err))
+			s.renderGDriveCard(w, r, "error", fmt.Sprintf("フォルダIDの保存に失敗しました: %v", err))
 			return
 		}
 	}
@@ -462,23 +521,23 @@ func (s *Server) handleUpdateGDriveSettings(w http.ResponseWriter, r *http.Reque
 		// JSONとしての最低限の妥当性確認
 		var testMap map[string]interface{}
 		if err := json.Unmarshal([]byte(serviceJSON), &testMap); err != nil {
-			s.renderAlert(w, "error", "サービスアカウント鍵のJSON形式が不正です")
+			s.renderGDriveCard(w, r, "error", "サービスアカウント鍵のJSON形式が不正です")
 			return
 		}
 		if err := s.db.SetSetting("gdrive_service_account_json", serviceJSON); err != nil {
-			s.renderAlert(w, "error", fmt.Sprintf("サービスアカウント鍵の保存に失敗しました: %v", err))
+			s.renderGDriveCard(w, r, "error", fmt.Sprintf("サービスアカウント鍵の保存に失敗しました: %v", err))
 			return
 		}
 	}
 
 	if encKey != "" {
 		if err := s.db.SetSetting("backup_encryption_key", encKey); err != nil {
-			s.renderAlert(w, "error", fmt.Sprintf("暗号化パスフレーズの保存に失敗しました: %v", err))
+			s.renderGDriveCard(w, r, "error", fmt.Sprintf("暗号化パスフレーズの保存に失敗しました: %v", err))
 			return
 		}
 	}
 
-	s.renderAlert(w, "success", "Google Drive連携設定を保存しました（即時反映）")
+	s.renderGDriveCard(w, r, "success", "Google Drive連携設定を保存しました（即時反映）")
 }
 
 // データベースクリーンアップ＆Vacuum実行API (HTMX)
@@ -510,6 +569,9 @@ func (s *Server) handleCleanupDatabase(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// クリーンアップ成功時にバックアップ履歴およびDBサイズバッジをリフレッシュ
+	w.Header().Set("HX-Trigger", "backupHistoryChanged")
+
 	newSizeKB := float64(newSizeBytes) / 1024.0
 	msg := fmt.Sprintf("%d日以前のデータを削除しました（送信履歴: %d件、バックアップ履歴: %d件）。Vacuumを実行し、データベースを最適化しました（現在のサイズ: %.1f KB）。",
 		days, deletedEmails, deletedLogs, newSizeKB)
@@ -520,6 +582,9 @@ func (s *Server) handleCleanupDatabase(w http.ResponseWriter, r *http.Request) {
 func (s *Server) handleTriggerBackup(w http.ResponseWriter, r *http.Request) {
 	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
 	defer cancel()
+
+	// バックアップ成功・失敗に関わらず履歴をリフレッシュするためHX-Triggerヘッダーを送信
+	w.Header().Set("HX-Trigger", "backupHistoryChanged")
 
 	if err := s.backupSvc.PerformBackup(ctx); err != nil {
 		s.renderAlert(w, "error", fmt.Sprintf("バックアップに失敗しました: %s", err))
@@ -585,7 +650,7 @@ func (s *Server) handleGoogleOAuthCallback(w http.ResponseWriter, r *http.Reques
 // OAuthクライアント設定更新API (HTMX)
 func (s *Server) handleUpdateGoogleOAuthClient(w http.ResponseWriter, r *http.Request) {
 	if err := r.ParseForm(); err != nil {
-		s.renderAlert(w, "error", "入力内容の解析に失敗しました")
+		s.renderGDriveCard(w, r, "error", "入力内容の解析に失敗しました")
 		return
 	}
 
@@ -597,34 +662,34 @@ func (s *Server) handleUpdateGoogleOAuthClient(w http.ResponseWriter, r *http.Re
 		// JSON妥当性確認
 		var testMap map[string]interface{}
 		if err := json.Unmarshal([]byte(rawJSON), &testMap); err != nil {
-			s.renderAlert(w, "error", "OAuthクライアント情報のJSON形式が不正です")
+			s.renderGDriveCard(w, r, "error", "OAuthクライアント情報のJSON形式が不正です")
 			return
 		}
 		if err := s.db.SetSetting("google_oauth_client_json", rawJSON); err != nil {
-			s.renderAlert(w, "error", fmt.Sprintf("設定の保存に失敗しました: %v", err))
+			s.renderGDriveCard(w, r, "error", fmt.Sprintf("設定の保存に失敗しました: %v", err))
 			return
 		}
 	} else if clientID != "" && clientSecret != "" {
 		_ = s.db.SetSetting("google_client_id", clientID)
 		_ = s.db.SetSetting("google_client_secret", clientSecret)
 	} else {
-		s.renderAlert(w, "error", "OAuthクライアントJSONまたはClient ID/Secretを入力してください")
+		s.renderGDriveCard(w, r, "error", "OAuthクライアントJSONまたはClient ID/Secretを入力してください")
 		return
 	}
 
-	s.renderAlert(w, "success", "Google OAuthクライアント情報を保存しました。下の「Google Driveと連携」ボタンを押して認証を行ってください。")
+	s.renderGDriveCard(w, r, "success", "Google OAuthクライアント情報を保存しました。下の「Google認証画面を開く」ボタンを押して認証を行ってください。")
 }
 
 // 認可コード手動入力API (HTMX)
 func (s *Server) handleManualGoogleOAuthCode(w http.ResponseWriter, r *http.Request) {
 	if err := r.ParseForm(); err != nil {
-		s.renderAlert(w, "error", "入力内容の解析に失敗しました")
+		s.renderGDriveCard(w, r, "error", "入力内容の解析に失敗しました")
 		return
 	}
 
 	rawInput := strings.TrimSpace(r.FormValue("auth_code"))
 	if rawInput == "" {
-		s.renderAlert(w, "error", "認可コードまたはリダイレクトURLを入力してください")
+		s.renderGDriveCard(w, r, "error", "認可コードまたはリダイレクトURLを入力してください")
 		return
 	}
 
@@ -649,18 +714,18 @@ func (s *Server) handleManualGoogleOAuthCode(w http.ResponseWriter, r *http.Requ
 	}
 
 	if err != nil {
-		s.renderAlert(w, "error", fmt.Sprintf("認可コードの検証に失敗しました: %v", err))
+		s.renderGDriveCard(w, r, "error", fmt.Sprintf("認可コードの検証に失敗しました: %v", err))
 		return
 	}
 
-	s.renderAlert(w, "success", "Google DriveとのOAuth連携が完了しました。常時自動バックアップが有効です。")
+	s.renderGDriveCard(w, r, "success", "Google DriveとのOAuth連携が完了しました。常時自動バックアップが有効です。")
 }
 
 // OAuth連携解除API (HTMX)
 func (s *Server) handleGoogleOAuthDisconnect(w http.ResponseWriter, r *http.Request) {
 	if err := s.backupSvc.DisconnectOAuth(); err != nil {
-		s.renderAlert(w, "error", fmt.Sprintf("連携解除に失敗しました: %v", err))
+		s.renderGDriveCard(w, r, "error", fmt.Sprintf("連携解除に失敗しました: %v", err))
 		return
 	}
-	s.renderAlert(w, "success", "Google DriveとのOAuth連携を解除しました")
+	s.renderGDriveCard(w, r, "success", "Google DriveとのOAuth連携を解除しました")
 }

@@ -13,219 +13,13 @@
 {{end}}
 
 <!-- Resend APIキーおよびドメイン設定 -->
-<div class="md-card">
-  <div class="md-card-header">
-    <h2 class="md-card-title">
-      <span class="material-symbols-outlined">key</span>
-      <span>Resend APIキー / ドメイン設定</span>
-    </h2>
-  </div>
-
-  <div id="resend-settings-result"></div>
-
-  <form hx-post="/api/settings/resend" hx-target="#resend-settings-result">
-    <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 1rem;">
-      <div class="md-form-group">
-        <label class="md-label" for="resend_api_key">Resend API キー</label>
-        <input class="md-input" type="password" id="resend_api_key" name="resend_api_key" placeholder="re_xxxxxxxxxxxxxxxxxxxx">
-        <div class="md-form-hint">
-          現在の設定: {{if .MaskedAPIKey}}<code>{{.MaskedAPIKey}}</code>{{else}}<span style="color: var(--md-sys-color-error);">未設定</span>{{end}} (変更する場合のみ入力)
-        </div>
-      </div>
-
-      <div class="md-form-group">
-        <label class="md-label" for="default_domain">デフォルトドメイン</label>
-        <input class="md-input" type="text" id="default_domain" name="default_domain" value="{{.DefaultDomain}}" placeholder="example.com">
-        <div class="md-form-hint">Cloudflare等で取得した送信対象ドメイン</div>
-      </div>
-    </div>
-
-    <div style="text-align: right; margin-top: 0.5rem;">
-      <button type="submit" class="md-btn md-btn-primary">
-        <span class="material-symbols-outlined">save</span>
-        <span>設定を保存（即時反映）</span>
-      </button>
-    </div>
-  </form>
-</div>
+{{template "resend_card" .}}
 
 <!-- ログイン認証情報変更 -->
-<div class="md-card">
-  <div class="md-card-header">
-    <h2 class="md-card-title">
-      <span class="material-symbols-outlined">badge</span>
-      <span>管理者アカウント設定（ID・パスワード変更）</span>
-    </h2>
-  </div>
-
-  <div id="credentials-result"></div>
-
-  <form hx-post="/api/settings/credentials" hx-target="#credentials-result">
-    <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 1rem;">
-      <div class="md-form-group">
-        <label class="md-label" for="username">ログインID (ユーザー名) *</label>
-        <input class="md-input" type="text" id="username" name="username" value="{{.CurrentUsername}}" required autocomplete="username">
-      </div>
-
-      <div class="md-form-group">
-        <label class="md-label" for="password">新しいパスワード *</label>
-        <input class="md-input" type="password" id="password" name="password" required autocomplete="new-password" placeholder="••••••••">
-      </div>
-
-      <div class="md-form-group">
-        <label class="md-label" for="confirm_password">新しいパスワード (確認) *</label>
-        <input class="md-input" type="password" id="confirm_password" name="confirm_password" required autocomplete="new-password" placeholder="••••••••">
-      </div>
-    </div>
-
-    <div style="text-align: right; margin-top: 0.5rem;">
-      <button type="submit" class="md-btn md-btn-tonal">
-        <span class="material-symbols-outlined">lock_reset</span>
-        <span>認証情報を更新</span>
-      </button>
-    </div>
-  </form>
-</div>
+{{template "credentials_card" .}}
 
 <!-- Google Drive 連携設定 (OAuth 2.0 & バックアップ先) -->
-<div class="md-card">
-  <div class="md-card-header">
-    <h2 class="md-card-title">
-      <span class="material-symbols-outlined">cloud_sync</span>
-      <span>Google Drive バックアップ設定 (OAuth 2.0連携)</span>
-    </h2>
-    <div>
-      {{if .IsOAuthConnected}}
-      <span class="md-badge md-badge-success">Google連携済み (有効)</span>
-      {{else if .HasGDriveCreds}}
-      <span class="md-badge md-badge-neutral">認証鍵登録済み (未連携)</span>
-      {{else}}
-      <span class="md-badge md-badge-error">未連携</span>
-      {{end}}
-    </div>
-  </div>
-
-  <div id="gdrive-base-result"></div>
-
-  <!-- 基本設定: フォルダID & 暗号化パスフレーズ -->
-  <form hx-post="/api/settings/gdrive" hx-target="#gdrive-base-result" style="margin-bottom: 1.5rem;">
-    <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 1rem;">
-      <div class="md-form-group">
-        <label class="md-label" for="gdrive_folder_id">保存先 Google Drive フォルダID *</label>
-        <input class="md-input" type="text" id="gdrive_folder_id" name="gdrive_folder_id" value="{{.FolderID}}" placeholder="1RyVosz5IrAiz7bdJXL9LMtcnXd-ocfGZ">
-        <div class="md-form-hint">Google Driveのバックアップ先フォルダURL末尾の英数字</div>
-      </div>
-
-      <div class="md-form-group">
-        <label class="md-label" for="backup_encryption_key">バックアップ暗号化パスフレーズ</label>
-        <input class="md-input" type="password" id="backup_encryption_key" name="backup_encryption_key" placeholder="変更する場合のみ入力">
-        <div class="md-form-hint">AES-256-GCM暗号化で使用するパスフレーズ</div>
-      </div>
-    </div>
-
-    <div style="text-align: right;">
-      <button type="submit" class="md-btn md-btn-tonal">
-        <span class="material-symbols-outlined">save</span>
-        <span>フォルダID・暗号化設定を保存</span>
-      </button>
-    </div>
-  </form>
-
-  <hr style="border: 0; border-top: 1px solid var(--md-sys-color-outline-variant); margin: 1.5rem 0;">
-
-  <!-- OAuth 2.0 連携手順 -->
-  <div style="margin-bottom: 1rem;">
-    <h3 style="font-size: 1.05rem; font-weight: 600; margin-bottom: 0.5rem; display: flex; align-items: center; gap: 0.5rem;">
-      <span class="material-symbols-outlined" style="color: var(--md-sys-color-primary);">vpn_key</span>
-      <span>手順 1: OAuth 2.0 クライアントJSONの登録</span>
-    </h3>
-    <p style="font-size: 0.85rem; color: var(--md-sys-color-on-surface-variant); margin-bottom: 0.75rem;">
-      Google Cloud Console（認証情報）で作成したOAuth 2.0 クライアントのJSONファイル（client_secret_xxx.json）の内容を貼り付けて保存してください。
-    </p>
-
-    <div id="oauth-client-result"></div>
-
-    <form hx-post="/api/settings/google-oauth-client" hx-target="#oauth-client-result">
-      <div class="md-form-group">
-        <textarea class="md-textarea" name="oauth_client_json" style="font-family: monospace; font-size: 0.8rem; min-height: 90px;" placeholder='{"installed":{"client_id":"...","client_secret":"..."}}'></textarea>
-      </div>
-      <div style="text-align: right;">
-        <button type="submit" class="md-btn md-btn-primary">
-          <span class="material-symbols-outlined">save</span>
-          <span>OAuthクライアント情報を保存</span>
-        </button>
-      </div>
-    </form>
-  </div>
-
-  <hr style="border: 0; border-top: 1px solid var(--md-sys-color-outline-variant); margin: 1.5rem 0;">
-
-  <!-- 手順 2: Google 認証実行 -->
-  <div>
-    <h3 style="font-size: 1.05rem; font-weight: 600; margin-bottom: 0.5rem; display: flex; align-items: center; gap: 0.5rem;">
-      <span class="material-symbols-outlined" style="color: var(--md-sys-color-primary);">how_to_reg</span>
-      <span>手順 2: Google アカウントとの連携認可</span>
-    </h3>
-
-    {{if .IsOAuthConnected}}
-    <div class="md-alert md-alert-success" style="margin-bottom: 1rem;">
-      <span class="material-symbols-outlined">check_circle</span>
-      <span>Google Driveとの連携が完了しています。ご自身のGoogleアカウントの容量でバックアップが自動実行されます。</span>
-    </div>
-    <div style="text-align: right;">
-      <button class="md-btn md-btn-danger" hx-post="/api/settings/google-oauth-disconnect" hx-target="#gdrive-base-result" hx-confirm="Google DriveのOAuth連携を解除しますか？">
-        <span class="material-symbols-outlined">link_off</span>
-        <span>連携を解除する</span>
-      </button>
-    </div>
-    {{else}}
-    <p style="font-size: 0.85rem; color: var(--md-sys-color-on-surface-variant); margin-bottom: 1rem;">
-      下のボタンを押してGoogleの同意画面を開き、Google Driveへのアクセスを許可してください。<br>
-      連携が完了すると、サーバーは一切の人間の介入なしに自動で暗号化バックアップを転送できるようになります。
-    </p>
-
-    <div style="display: flex; flex-wrap: wrap; gap: 1rem; align-items: center; margin-bottom: 1.5rem;">
-      {{if .AuthURL}}
-      <a href="{{.AuthURL}}" target="_blank" class="md-btn md-btn-primary" style="text-decoration: none;">
-        <span class="material-symbols-outlined">open_in_new</span>
-        <span>Google認証画面を開く</span>
-      </a>
-      <span style="font-size: 0.85rem; color: var(--md-sys-color-outline);">
-        ※別タブでGoogleログイン・許可画面が開きます
-      </span>
-      {{else}}
-      <div style="font-size: 0.85rem; color: var(--md-sys-color-outline);">
-        ※上の「手順 1」でOAuthクライアントJSONを保存すると認証ボタンが表示されます
-      </div>
-      {{end}}
-    </div>
-
-    <!-- 認可コード手動入力枠（Tailscaleやリダイレクトが合わない場合用） -->
-    <details style="background-color: var(--md-sys-color-surface-variant); padding: 1rem; border-radius: var(--md-sys-shape-corner-s);">
-      <summary style="font-size: 0.9rem; font-weight: 600; cursor: pointer; color: var(--md-sys-color-on-surface);">
-        リダイレクトされない場合はこちら（認可コード・URLの手動貼り付け）
-      </summary>
-      <div style="margin-top: 1rem;">
-        <p style="font-size: 0.825rem; color: var(--md-sys-color-on-surface-variant); margin-bottom: 0.5rem;">
-          Googleの認証画面で「許可」を押した後にブラウザのアドレスバーに表示されたURL全体、または「code=」の後の文字列を貼り付けてください。
-        </p>
-        <div id="manual-code-result"></div>
-        <form hx-post="/api/settings/google-oauth-code" hx-target="#manual-code-result">
-          <div class="md-form-group">
-            <input class="md-input" type="text" name="auth_code" placeholder="http://localhost/?code=4/0A... または 4/0A...">
-          </div>
-          <div style="text-align: right;">
-            <button type="submit" class="md-btn md-btn-tonal">
-              <span class="material-symbols-outlined">link</span>
-              <span>認可コードで連携を完了する</span>
-            </button>
-          </div>
-        </form>
-      </div>
-    </details>
-    {{end}}
-  </div>
-</div>
+{{template "gdrive_card" .}}
 
 <!-- データベース最適化・履歴クリーンアップ (Vacuum) -->
 <div class="md-card">
@@ -234,7 +28,7 @@
       <span class="material-symbols-outlined">cleaning_services</span>
       <span>データベース保守・履歴クリーンアップ (Vacuum)</span>
     </h2>
-    <span class="md-badge md-badge-neutral">現在のDBサイズ: {{.DatabaseSizeKB}} KB</span>
+    {{template "db_size_badge" .}}
   </div>
 
   <p style="font-size: 0.875rem; color: var(--md-sys-color-on-surface-variant); margin-bottom: 1.25rem;">
@@ -322,32 +116,8 @@
           <th>備考 / エラー</th>
         </tr>
       </thead>
-      <tbody id="backup-logs-table">
-        {{range .Logs}}
-        <tr>
-          <td style="font-size: 0.85rem; color: var(--md-sys-color-outline); white-space: nowrap;">
-            {{.BackedUpAt.Format "2006-01-02 15:04:05"}}
-          </td>
-          <td><code>{{.FileName}}</code></td>
-          <td style="font-size: 0.85rem;">{{if gt .FileSizeBytes 0}}{{.FileSizeBytes}} バイト{{else}}-{{end}}</td>
-          <td>
-            {{if eq .Status "success"}}
-            <span class="md-badge md-badge-success">成功</span>
-            {{else}}
-            <span class="md-badge md-badge-error">失敗</span>
-            {{end}}
-          </td>
-          <td style="font-size: 0.85rem; color: var(--md-sys-color-outline);">
-            {{if .ErrorMessage}}{{.ErrorMessage}}{{else if .GDriveFileID}}ID: {{.GDriveFileID}}{{else}}-{{end}}
-          </td>
-        </tr>
-        {{else}}
-        <tr>
-          <td colspan="5" style="text-align: center; color: var(--md-sys-color-outline); padding: 2rem;">
-            バックアップ履歴はまだありません
-          </td>
-        </tr>
-        {{end}}
+      <tbody id="backup-logs-table" hx-get="/api/settings/backup-logs" hx-trigger="backupHistoryChanged from:body">
+        {{template "backup_logs_rows" .}}
       </tbody>
     </table>
   </div>
@@ -356,4 +126,266 @@
 <style>
 @keyframes spin { 100% { transform: rotate(360deg); } }
 </style>
+{{end}}
+
+{{define "resend_card"}}
+<div class="md-card" id="resend-settings-card">
+  <div class="md-card-header">
+    <h2 class="md-card-title">
+      <span class="material-symbols-outlined">key</span>
+      <span>Resend APIキー / ドメイン設定</span>
+    </h2>
+  </div>
+
+  {{if .ResendAlert}}
+  <div class="md-alert {{if eq .ResendAlertType "error"}}md-alert-error{{else}}md-alert-success{{end}}">
+    <span class="material-symbols-outlined">{{if eq .ResendAlertType "error"}}error{{else}}check_circle{{end}}</span>
+    <span>{{.ResendAlert}}</span>
+  </div>
+  {{end}}
+
+  <form hx-post="/api/settings/resend" hx-target="#resend-settings-card" hx-swap="outerHTML">
+    <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 1rem;">
+      <div class="md-form-group">
+        <label class="md-label" for="resend_api_key">Resend API キー</label>
+        <input class="md-input" type="password" id="resend_api_key" name="resend_api_key" placeholder="re_xxxxxxxxxxxxxxxxxxxx">
+        <div class="md-form-hint">
+          現在の設定: {{if .MaskedAPIKey}}<code>{{.MaskedAPIKey}}</code>{{else}}<span style="color: var(--md-sys-color-error);">未設定</span>{{end}} (変更する場合のみ入力)
+        </div>
+      </div>
+
+      <div class="md-form-group">
+        <label class="md-label" for="default_domain">デフォルトドメイン</label>
+        <input class="md-input" type="text" id="default_domain" name="default_domain" value="{{.DefaultDomain}}" placeholder="example.com">
+        <div class="md-form-hint">Cloudflare等で取得した送信対象ドメイン</div>
+      </div>
+    </div>
+
+    <div style="text-align: right; margin-top: 0.5rem;">
+      <button type="submit" class="md-btn md-btn-primary">
+        <span class="material-symbols-outlined">save</span>
+        <span>設定を保存（即時反映）</span>
+      </button>
+    </div>
+  </form>
+</div>
+{{end}}
+
+{{define "credentials_card"}}
+<div class="md-card" id="credentials-settings-card">
+  <div class="md-card-header">
+    <h2 class="md-card-title">
+      <span class="material-symbols-outlined">badge</span>
+      <span>管理者アカウント設定（ID・パスワード変更）</span>
+    </h2>
+  </div>
+
+  {{if .CredAlert}}
+  <div class="md-alert {{if eq .CredAlertType "error"}}md-alert-error{{else}}md-alert-success{{end}}">
+    <span class="material-symbols-outlined">{{if eq .CredAlertType "error"}}error{{else}}check_circle{{end}}</span>
+    <span>{{.CredAlert}}</span>
+  </div>
+  {{end}}
+
+  <form hx-post="/api/settings/credentials" hx-target="#credentials-settings-card" hx-swap="outerHTML">
+    <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 1rem;">
+      <div class="md-form-group">
+        <label class="md-label" for="username">ログインID (ユーザー名) *</label>
+        <input class="md-input" type="text" id="username" name="username" value="{{.CurrentUsername}}" required autocomplete="username">
+      </div>
+
+      <div class="md-form-group">
+        <label class="md-label" for="password">新しいパスワード *</label>
+        <input class="md-input" type="password" id="password" name="password" required autocomplete="new-password" placeholder="••••••••">
+      </div>
+
+      <div class="md-form-group">
+        <label class="md-label" for="confirm_password">新しいパスワード (確認) *</label>
+        <input class="md-input" type="password" id="confirm_password" name="confirm_password" required autocomplete="new-password" placeholder="••••••••">
+      </div>
+    </div>
+
+    <div style="text-align: right; margin-top: 0.5rem;">
+      <button type="submit" class="md-btn md-btn-tonal">
+        <span class="material-symbols-outlined">lock_reset</span>
+        <span>認証情報を更新</span>
+      </button>
+    </div>
+  </form>
+</div>
+{{end}}
+
+{{define "gdrive_card"}}
+<div class="md-card" id="gdrive-settings-card">
+  <div class="md-card-header">
+    <h2 class="md-card-title">
+      <span class="material-symbols-outlined">cloud_sync</span>
+      <span>Google Drive バックアップ設定 (OAuth 2.0連携)</span>
+    </h2>
+    <div>
+      {{if .IsOAuthConnected}}
+      <span class="md-badge md-badge-success">Google連携済み (有効)</span>
+      {{else if .HasGDriveCreds}}
+      <span class="md-badge md-badge-neutral">認証鍵登録済み (未連携)</span>
+      {{else}}
+      <span class="md-badge md-badge-error">未連携</span>
+      {{end}}
+    </div>
+  </div>
+
+  {{if .CardAlert}}
+  <div class="md-alert {{if eq .CardAlertType "error"}}md-alert-error{{else}}md-alert-success{{end}}" style="margin-bottom: 1.5rem;">
+    <span class="material-symbols-outlined">{{if eq .CardAlertType "error"}}error{{else}}check_circle{{end}}</span>
+    <span>{{.CardAlert}}</span>
+  </div>
+  {{end}}
+
+  <!-- 基本設定: フォルダID & 暗号化パスフレーズ -->
+  <form hx-post="/api/settings/gdrive" hx-target="#gdrive-settings-card" hx-swap="outerHTML" style="margin-bottom: 1.5rem;">
+    <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 1rem;">
+      <div class="md-form-group">
+        <label class="md-label" for="gdrive_folder_id">保存先 Google Drive フォルダID *</label>
+        <input class="md-input" type="text" id="gdrive_folder_id" name="gdrive_folder_id" value="{{.FolderID}}" placeholder="1RyVosz5IrAiz7bdJXL9LMtcnXd-ocfGZ">
+        <div class="md-form-hint">Google Driveのバックアップ先フォルダURL末尾の英数字</div>
+      </div>
+
+      <div class="md-form-group">
+        <label class="md-label" for="backup_encryption_key">バックアップ暗号化パスフレーズ</label>
+        <input class="md-input" type="password" id="backup_encryption_key" name="backup_encryption_key" placeholder="変更する場合のみ入力">
+        <div class="md-form-hint">AES-256-GCM暗号化で使用するパスフレーズ</div>
+      </div>
+    </div>
+
+    <div style="text-align: right;">
+      <button type="submit" class="md-btn md-btn-tonal">
+        <span class="material-symbols-outlined">save</span>
+        <span>フォルダID・暗号化設定を保存</span>
+      </button>
+    </div>
+  </form>
+
+  <hr style="border: 0; border-top: 1px solid var(--md-sys-color-outline-variant); margin: 1.5rem 0;">
+
+  <!-- OAuth 2.0 連携手順 -->
+  <div style="margin-bottom: 1rem;">
+    <h3 style="font-size: 1.05rem; font-weight: 600; margin-bottom: 0.5rem; display: flex; align-items: center; gap: 0.5rem;">
+      <span class="material-symbols-outlined" style="color: var(--md-sys-color-primary);">vpn_key</span>
+      <span>手順 1: OAuth 2.0 クライアントJSONの登録</span>
+    </h3>
+    <p style="font-size: 0.85rem; color: var(--md-sys-color-on-surface-variant); margin-bottom: 0.75rem;">
+      Google Cloud Console（認証情報）で作成したOAuth 2.0 クライアントのJSONファイル（client_secret_xxx.json）の内容を貼り付けて保存してください。
+    </p>
+
+    <form hx-post="/api/settings/google-oauth-client" hx-target="#gdrive-settings-card" hx-swap="outerHTML">
+      <div class="md-form-group">
+        <textarea class="md-textarea" name="oauth_client_json" style="font-family: monospace; font-size: 0.8rem; min-height: 90px;" placeholder='{"installed":{"client_id":"...","client_secret":"..."}}'></textarea>
+      </div>
+      <div style="text-align: right;">
+        <button type="submit" class="md-btn md-btn-primary">
+          <span class="material-symbols-outlined">save</span>
+          <span>OAuthクライアント情報を保存</span>
+        </button>
+      </div>
+    </form>
+  </div>
+
+  <hr style="border: 0; border-top: 1px solid var(--md-sys-color-outline-variant); margin: 1.5rem 0;">
+
+  <!-- 手順 2: Google 認証実行 -->
+  <div>
+    <h3 style="font-size: 1.05rem; font-weight: 600; margin-bottom: 0.5rem; display: flex; align-items: center; gap: 0.5rem;">
+      <span class="material-symbols-outlined" style="color: var(--md-sys-color-primary);">how_to_reg</span>
+      <span>手順 2: Google アカウントとの連携認可</span>
+    </h3>
+
+    {{if .IsOAuthConnected}}
+    <div class="md-alert md-alert-success" style="margin-bottom: 1rem;">
+      <span class="material-symbols-outlined">check_circle</span>
+      <span>Google Driveとの連携が完了しています。ご自身のGoogleアカウントの容量でバックアップが自動実行されます。</span>
+    </div>
+    <div style="text-align: right;">
+      <button class="md-btn md-btn-danger" hx-post="/api/settings/google-oauth-disconnect" hx-target="#gdrive-settings-card" hx-swap="outerHTML" hx-confirm="Google DriveのOAuth連携を解除しますか？">
+        <span class="material-symbols-outlined">link_off</span>
+        <span>連携を解除する</span>
+      </button>
+    </div>
+    {{else}}
+    <p style="font-size: 0.85rem; color: var(--md-sys-color-on-surface-variant); margin-bottom: 1rem;">
+      下のボタンを押してGoogleの同意画面を開き、Google Driveへのアクセスを許可してください。<br>
+      連携が完了すると、サーバーは一切の人間の介入なしに自動で暗号化バックアップを転送できるようになります。
+    </p>
+
+    <div style="display: flex; flex-wrap: wrap; gap: 1rem; align-items: center; margin-bottom: 1.5rem;">
+      {{if .AuthURL}}
+      <a href="{{.AuthURL}}" target="_blank" class="md-btn md-btn-primary" style="text-decoration: none;">
+        <span class="material-symbols-outlined">open_in_new</span>
+        <span>Google認証画面を開く</span>
+      </a>
+      <span style="font-size: 0.85rem; color: var(--md-sys-color-outline);">
+        ※別タブでGoogleログイン・許可画面が開きます
+      </span>
+      {{else}}
+      <div style="font-size: 0.85rem; color: var(--md-sys-color-outline);">
+        ※上の「手順 1」でOAuthクライアントJSONを保存すると認証ボタンが表示されます
+      </div>
+      {{end}}
+    </div>
+
+    <!-- 認可コード手動入力枠（Tailscaleやリダイレクトが合わない場合用） -->
+    <details style="background-color: var(--md-sys-color-surface-variant); padding: 1rem; border-radius: var(--md-sys-shape-corner-s);">
+      <summary style="font-size: 0.9rem; font-weight: 600; cursor: pointer; color: var(--md-sys-color-on-surface);">
+        リダイレクトされない場合はこちら（認可コード・URLの手動貼り付け）
+      </summary>
+      <div style="margin-top: 1rem;">
+        <p style="font-size: 0.825rem; color: var(--md-sys-color-on-surface-variant); margin-bottom: 0.5rem;">
+          Googleの認証画面で「許可」を押した後にブラウザのアドレスバーに表示されたURL全体、または「code=」の後の文字列を貼り付けてください。
+        </p>
+        <form hx-post="/api/settings/google-oauth-code" hx-target="#gdrive-settings-card" hx-swap="outerHTML">
+          <div class="md-form-group">
+            <input class="md-input" type="text" name="auth_code" placeholder="http://localhost/?code=4/0A... または 4/0A...">
+          </div>
+          <div style="text-align: right;">
+            <button type="submit" class="md-btn md-btn-tonal">
+              <span class="material-symbols-outlined">link</span>
+              <span>認可コードで連携を完了する</span>
+            </button>
+          </div>
+        </form>
+      </div>
+    </details>
+    {{end}}
+  </div>
+</div>
+{{end}}
+
+{{define "db_size_badge"}}
+<span id="db-size-badge" class="md-badge md-badge-neutral" hx-get="/api/settings/db-size" hx-trigger="backupHistoryChanged from:body">現在のDBサイズ: {{.DatabaseSizeKB}} KB</span>
+{{end}}
+
+{{define "backup_logs_rows"}}
+{{range .Logs}}
+<tr>
+  <td style="font-size: 0.85rem; color: var(--md-sys-color-outline); white-space: nowrap;">
+    {{.BackedUpAt.Format "2006-01-02 15:04:05"}}
+  </td>
+  <td><code>{{.FileName}}</code></td>
+  <td style="font-size: 0.85rem;">{{if gt .FileSizeBytes 0}}{{.FileSizeBytes}} バイト{{else}}-{{end}}</td>
+  <td>
+    {{if eq .Status "success"}}
+    <span class="md-badge md-badge-success">成功</span>
+    {{else}}
+    <span class="md-badge md-badge-error">失敗</span>
+    {{end}}
+  </td>
+  <td style="font-size: 0.85rem; color: var(--md-sys-color-outline);">
+    {{if .ErrorMessage}}{{.ErrorMessage}}{{else if .GDriveFileID}}ID: {{.GDriveFileID}}{{else}}-{{end}}
+  </td>
+</tr>
+{{else}}
+<tr>
+  <td colspan="5" style="text-align: center; color: var(--md-sys-color-outline); padding: 2rem;">
+    バックアップ履歴はまだありません
+  </td>
+</tr>
+{{end}}
 {{end}}
