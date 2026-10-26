@@ -1,7 +1,9 @@
 # マルチステージビルド
-FROM golang:1.24-alpine AS builder
+FROM golang:alpine AS builder
 
 WORKDIR /app
+
+ENV GOTOOLCHAIN=auto
 
 # CA証明書等の取得
 RUN apk --no-cache add ca-certificates tzdata
