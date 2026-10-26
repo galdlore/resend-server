@@ -1,4 +1,36 @@
 {{define "content"}}
+<!-- 受信メール解析アコーディオン -->
+<div class="md-card" style="margin-bottom: 1rem; border-style: dashed;">
+  <div style="display: flex; justify-content: space-between; align-items: center; cursor: pointer;" onclick="toggleParserPanel()">
+    <div style="display: flex; align-items: center; gap: 0.5rem; font-weight: 600; color: var(--md-sys-color-primary);">
+      <span class="material-symbols-outlined">auto_fix_high</span>
+      <span>Gmail等の受信メールソースから返信を自動設定</span>
+    </div>
+    <span id="parser-toggle-icon" class="material-symbols-outlined" style="transition: transform 0.2s;">expand_more</span>
+  </div>
+
+  <div id="parser-panel" style="display: none; margin-top: 1rem; padding-top: 1rem; border-top: 1px solid var(--md-sys-color-outline-variant);">
+    <p style="font-size: 0.85rem; color: var(--md-sys-color-on-surface-variant); margin-bottom: 0.75rem;">
+      Gmailの「︙」メニューから「元のメッセージを表示」を開き、ヘッダーまたは全文をコピーして下に貼り付けてください。<br>
+      送信元エイリアス、返信先宛先、Re: 件名、引用本文を自動抽出して下のフォームにセットします。
+    </p>
+
+    <div class="md-form-group">
+      <textarea id="raw-email-input" class="md-textarea" style="min-height: 100px; font-family: monospace; font-size: 0.8rem;" placeholder="Delivered-To: shopping@yourdomain.com&#10;From: &quot;Support&quot; <support@example.com>&#10;Subject: お問い合わせの件&#10;..."></textarea>
+    </div>
+
+    <div id="parser-status" style="margin-bottom: 0.75rem;"></div>
+
+    <div style="text-align: right;">
+      <button type="button" class="md-btn md-btn-tonal" onclick="parseEmailSource()">
+        <span class="material-symbols-outlined">content_paste_go</span>
+        <span>解析してフォームに反映</span>
+      </button>
+    </div>
+  </div>
+</div>
+
+<!-- メール作成カード -->
 <div class="md-card">
   <div class="md-card-header">
     <h2 class="md-card-title">
@@ -12,7 +44,7 @@
 
   <div id="send-result"></div>
 
-  <form hx-post="/api/send" hx-target="#send-result" hx-indicator="#send-spinner">
+  <form id="compose-form" hx-post="/api/send" hx-target="#send-result" hx-indicator="#send-spinner">
     <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 1rem;">
       <div class="md-form-group">
         <label class="md-label" for="from_select">送信元エイリアス (From)</label>
@@ -74,6 +106,78 @@ function handleFromSelect(sel) {
   const name = opt.getAttribute('data-name');
   if (name) {
     document.getElementById('from_name').value = name;
+  }
+}
+
+function toggleParserPanel() {
+  const panel = document.getElementById('parser-panel');
+  const icon = document.getElementById('parser-toggle-icon');
+  if (panel.style.display === 'none') {
+    panel.style.display = 'block';
+    icon.style.transform = 'rotate(180deg)';
+  } else {
+    panel.style.display = 'none';
+    icon.style.transform = 'rotate(0deg)';
+  }
+}
+
+async function parseEmailSource() {
+  const rawInput = document.getElementById('raw-email-input').value;
+  const statusEl = document.getElementById('parser-status');
+
+  if (!rawInput.trim()) {
+    statusEl.innerHTML = '<div class="md-alert md-alert-error" style="padding: 0.5rem 1rem; font-size: 0.85rem;"><span class="material-symbols-outlined">error</span><span>メールソースを入力してください</span></div>';
+    return;
+  }
+
+  statusEl.innerHTML = '<span style="font-size: 0.85rem; color: var(--md-sys-color-outline);">解析中...</span>';
+
+  try {
+    const formData = new URLSearchParams();
+    formData.append('raw_email', rawInput);
+
+    const resp = await fetch('/api/parse-email', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/x-www-form-urlencoded',
+      },
+      body: formData.toString()
+    });
+
+    if (!resp.ok) {
+      const errText = await resp.text();
+      statusEl.innerHTML = `<div class="md-alert md-alert-error" style="padding: 0.5rem 1rem; font-size: 0.85rem;"><span class="material-symbols-outlined">error</span><span>${errText}</span></div>`;
+      return;
+    }
+
+    const data = await resp.json();
+
+    // フォームへの反映
+    if (data.to_address) {
+      document.getElementById('to_address').value = data.to_address;
+    }
+    if (data.from_address) {
+      document.getElementById('from_address').value = data.from_address;
+      // セレクトボックスに該当エイリアスがあれば自動選択
+      const sel = document.getElementById('from_select');
+      for (let i = 0; i < sel.options.length; i++) {
+        if (sel.options[i].value.toLowerCase() === data.from_address.toLowerCase()) {
+          sel.selectedIndex = i;
+          break;
+        }
+      }
+    }
+    if (data.subject) {
+      document.getElementById('subject').value = data.subject;
+    }
+    if (data.quoted_body) {
+      const bodyEl = document.getElementById('body');
+      bodyEl.value = (bodyEl.value ? bodyEl.value + '\n' : '') + data.quoted_body;
+    }
+
+    statusEl.innerHTML = '<div class="md-alert md-alert-success" style="padding: 0.5rem 1rem; font-size: 0.85rem;"><span class="material-symbols-outlined">check_circle</span><span>送信元エイリアス、宛先、件名、引用本文を自動反映しました</span></div>';
+  } catch (err) {
+    statusEl.innerHTML = `<div class="md-alert md-alert-error" style="padding: 0.5rem 1rem; font-size: 0.85rem;"><span class="material-symbols-outlined">error</span><span>通信エラーが発生しました: ${err.message}</span></div>`;
   }
 }
 </script>

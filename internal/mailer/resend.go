@@ -8,12 +8,17 @@ import (
 	"io"
 	"net/http"
 	"strings"
+	"sync"
 	"time"
+
+	"github.com/galdlore/resend-server/internal/db"
 )
 
 type Client struct {
-	apiKey     string
-	httpClient *http.Client
+	db            *db.DB
+	defaultAPIKey string
+	httpClient    *http.Client
+	mu            sync.RWMutex
 }
 
 type SendRequest struct {
@@ -30,18 +35,33 @@ type SendResult struct {
 	Error error
 }
 
-func New(apiKey string) *Client {
+func New(database *db.DB, defaultAPIKey string) *Client {
 	return &Client{
-		apiKey: apiKey,
+		db:            database,
+		defaultAPIKey: defaultAPIKey,
 		httpClient: &http.Client{
 			Timeout: 15 * time.Second,
 		},
 	}
 }
 
+// GetAPIKey は現在有効なResend APIキーを取得します（DBのカスタム設定を優先）。
+func (c *Client) GetAPIKey() string {
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+
+	if c.db != nil {
+		if k, err := c.db.GetSetting("resend_api_key"); err == nil && k != "" {
+			return k
+		}
+	}
+	return c.defaultAPIKey
+}
+
 func (c *Client) Send(req SendRequest) (*SendResult, error) {
-	if c.apiKey == "" {
-		return nil, errors.New("Resend APIキーが設定されていません")
+	apiKey := c.GetAPIKey()
+	if apiKey == "" {
+		return nil, errors.New("Resend APIキーが設定されていません。設定画面から登録してください。")
 	}
 
 	fromHeader := req.FromAddress
@@ -49,7 +69,6 @@ func (c *Client) Send(req SendRequest) (*SendResult, error) {
 		fromHeader = fmt.Sprintf("%s <%s>", req.FromName, req.FromAddress)
 	}
 
-	// 宛先アドレスのトリム
 	toAddress := strings.TrimSpace(req.ToAddress)
 	if toAddress == "" {
 		return nil, errors.New("宛先メールアドレスが空です")
@@ -66,7 +85,6 @@ func (c *Client) Send(req SendRequest) (*SendResult, error) {
 	if req.BodyHTML != "" {
 		payload["html"] = req.BodyHTML
 	} else if req.BodyText != "" {
-		// プレーンテキストのみの場合は改行を<br>にして簡易HTMLも設定
 		escaped := strings.ReplaceAll(req.BodyText, "\n", "<br>")
 		payload["html"] = fmt.Sprintf("<div style=\"font-family: sans-serif; line-height: 1.6;\">%s</div>", escaped)
 	}
@@ -81,7 +99,7 @@ func (c *Client) Send(req SendRequest) (*SendResult, error) {
 		return nil, fmt.Errorf("httpリクエストの構築に失敗しました: %w", err)
 	}
 
-	httpReq.Header.Set("Authorization", "Bearer "+c.apiKey)
+	httpReq.Header.Set("Authorization", "Bearer "+apiKey)
 	httpReq.Header.Set("Content-Type", "application/json")
 
 	resp, err := c.httpClient.Do(httpReq)

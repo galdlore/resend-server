@@ -128,6 +128,12 @@ func (d *DB) migrate() error {
 	);
 
 	CREATE INDEX IF NOT EXISTS idx_backup_logs_backed_up_at ON backup_logs(backed_up_at DESC);
+
+	CREATE TABLE IF NOT EXISTS app_settings (
+		key TEXT PRIMARY KEY,
+		value TEXT NOT NULL,
+		updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
+	);
 	`
 	_, err := d.Exec(schema)
 	return err
@@ -329,3 +335,31 @@ func (d *DB) CreateSnapshot(destPath string) error {
 	_, err := d.Exec(fmt.Sprintf("VACUUM INTO '%s'", filepath.ToSlash(destPath)))
 	return err
 }
+
+// 設定値関連
+func (d *DB) GetSetting(key string) (string, error) {
+	row := d.QueryRow("SELECT value FROM app_settings WHERE key = ?", key)
+	var val string
+	if err := row.Scan(&val); err != nil {
+		return "", err
+	}
+	return val, nil
+}
+
+func (d *DB) GetSettingWithDefault(key, defaultVal string) string {
+	val, err := d.GetSetting(key)
+	if err != nil || val == "" {
+		return defaultVal
+	}
+	return val
+}
+
+func (d *DB) SetSetting(key, value string) error {
+	now := time.Now()
+	_, err := d.Exec(
+		"INSERT INTO app_settings (key, value, updated_at) VALUES (?, ?, ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value, updated_at = excluded.updated_at",
+		key, value, now,
+	)
+	return err
+}
+

@@ -2,6 +2,7 @@ package handlers
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"html/template"
 	"net/http"
@@ -14,6 +15,7 @@ import (
 	"github.com/galdlore/resend-server/internal/config"
 	"github.com/galdlore/resend-server/internal/db"
 	"github.com/galdlore/resend-server/internal/mailer"
+	"github.com/galdlore/resend-server/internal/parser"
 )
 
 type Server struct {
@@ -55,14 +57,12 @@ func (s *Server) loadTemplates() error {
 		s.templates[page] = tmpl
 	}
 
-	// モーダル用単体テンプレート
 	modalTmpl, err := template.ParseFiles("web/templates/modal_detail.html")
 	if err != nil {
 		return fmt.Errorf("modal_detailのパースに失敗しました: %w", err)
 	}
 	s.templates["modal_detail"] = modalTmpl
 
-	// エイリアステーブル再描画用パーシャル
 	aliasesPartial, err := template.ParseFiles("web/templates/aliases.html")
 	if err != nil {
 		return fmt.Errorf("aliases partialのパースに失敗しました: %w", err)
@@ -85,6 +85,7 @@ func (s *Server) RegisterRoutes(mux *http.ServeMux) {
 	// 要認証ルート
 	mux.HandleFunc("GET /{$}", s.handleComposePage)
 	mux.HandleFunc("POST /api/send", s.handleSendEmail)
+	mux.HandleFunc("POST /api/parse-email", s.handleParseEmail)
 
 	mux.HandleFunc("GET /aliases", s.handleAliasesPage)
 	mux.HandleFunc("POST /api/aliases", s.handleCreateAlias)
@@ -95,6 +96,12 @@ func (s *Server) RegisterRoutes(mux *http.ServeMux) {
 
 	mux.HandleFunc("GET /settings", s.handleSettingsPage)
 	mux.HandleFunc("POST /api/backup", s.handleTriggerBackup)
+	mux.HandleFunc("POST /api/settings/credentials", s.handleUpdateCredentials)
+	mux.HandleFunc("POST /api/settings/resend", s.handleUpdateResendSettings)
+}
+
+func (s *Server) getDefaultDomain() string {
+	return s.db.GetSettingWithDefault("default_domain", s.cfg.DefaultDomain)
 }
 
 // ログイン・認証ハンドラー
@@ -147,7 +154,7 @@ func (s *Server) handleComposePage(w http.ResponseWriter, r *http.Request) {
 		"IsLoggedIn":    true,
 		"ActiveNav":     "compose",
 		"Aliases":       aliases,
-		"DefaultDomain": s.cfg.DefaultDomain,
+		"DefaultDomain": s.getDefaultDomain(),
 	}
 	_ = s.templates["compose"].ExecuteTemplate(w, "layout", data)
 }
@@ -170,7 +177,6 @@ func (s *Server) handleSendEmail(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Resend API送信
 	req := mailer.SendRequest{
 		FromAddress: fromAddr,
 		FromName:    fromName,
@@ -187,16 +193,37 @@ func (s *Server) handleSendEmail(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// 送信成功ログ記録
 	_, _ = s.db.CreateSentEmail(result.ID, fromAddr, fromName, toAddr, subject, body, "", "sent", "")
 
-	// 登録されていないエイリアスの場合は自動登録するかメモ
 	existing, _ := s.db.GetAliasByAddress(fromAddr)
 	if existing == nil {
 		_, _ = s.db.CreateAlias(fromAddr, fromName, "送信時に自動追加")
 	}
 
 	s.renderAlert(w, "success", fmt.Sprintf("メールを正常に送信しました（Resend ID: %s）", result.ID))
+}
+
+// メールソース解析API
+func (s *Server) handleParseEmail(w http.ResponseWriter, r *http.Request) {
+	if err := r.ParseForm(); err != nil {
+		http.Error(w, "入力形式が不正です", http.StatusBadRequest)
+		return
+	}
+
+	rawEmail := r.FormValue("raw_email")
+	if strings.TrimSpace(rawEmail) == "" {
+		http.Error(w, "メールソースが空です", http.StatusBadRequest)
+		return
+	}
+
+	parsed, err := parser.ParseEmailSource(rawEmail, s.getDefaultDomain())
+	if err != nil {
+		http.Error(w, fmt.Sprintf("メールの解析に失敗しました: %v", err), http.StatusBadRequest)
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json; charset=utf-8")
+	_ = json.NewEncoder(w).Encode(parsed)
 }
 
 // エイリアス一覧画面
@@ -233,12 +260,10 @@ func (s *Server) handleCreateAlias(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if _, err := s.db.CreateAlias(addr, name, note); err != nil {
-		// 既に存在する場合などはエラー
 		http.Error(w, fmt.Sprintf("登録に失敗しました: %v", err), http.StatusInternalServerError)
 		return
 	}
 
-	// 更新後の行一覧を再描画
 	aliases, _ := s.db.ListAliases(true)
 	_ = s.templates["aliases_rows"].ExecuteTemplate(w, "aliases_rows", map[string]interface{}{
 		"Aliases": aliases,
@@ -259,7 +284,6 @@ func (s *Server) handleDeleteAlias(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// 空レスポンスでouterHTMLスワップにより要素をDOMから除去
 	w.WriteHeader(http.StatusOK)
 }
 
@@ -308,16 +332,91 @@ func (s *Server) handleSettingsPage(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	currentUsername, _ := s.auth.GetCredentials()
+	currentAPIKey := s.mailer.GetAPIKey()
+	maskedAPIKey := ""
+	if currentAPIKey != "" {
+		if len(currentAPIKey) > 8 {
+			maskedAPIKey = currentAPIKey[:4] + "••••••••" + currentAPIKey[len(currentAPIKey)-4:]
+		} else {
+			maskedAPIKey = "••••••••"
+		}
+	}
+
 	data := map[string]interface{}{
-		"Title":              "バックアップ設定",
+		"Title":              "環境設定",
 		"IsLoggedIn":         true,
 		"ActiveNav":          "settings",
 		"Logs":               logs,
+		"CurrentUsername":    currentUsername,
+		"MaskedAPIKey":       maskedAPIKey,
+		"DefaultDomain":      s.getDefaultDomain(),
 		"ServiceAccountJSON": s.cfg.GDriveServiceAccountJSON,
 		"FolderID":           s.cfg.GDriveFolderID,
 		"BackupIntervalMin":  s.cfg.BackupIntervalMinutes,
 	}
 	_ = s.templates["settings"].ExecuteTemplate(w, "layout", data)
+}
+
+// 認証情報変更API (HTMX)
+func (s *Server) handleUpdateCredentials(w http.ResponseWriter, r *http.Request) {
+	if err := r.ParseForm(); err != nil {
+		s.renderAlert(w, "error", "入力内容の解析に失敗しました")
+		return
+	}
+
+	username := strings.TrimSpace(r.FormValue("username"))
+	password := r.FormValue("password")
+	confirmPass := r.FormValue("confirm_password")
+
+	if username == "" {
+		s.renderAlert(w, "error", "ユーザー名は必須です")
+		return
+	}
+	if password == "" {
+		s.renderAlert(w, "error", "パスワードを入力してください")
+		return
+	}
+	if password != confirmPass {
+		s.renderAlert(w, "error", "確認用パスワードが一致しません")
+		return
+	}
+
+	if err := s.auth.UpdateCredentials(username, password); err != nil {
+		s.renderAlert(w, "error", fmt.Sprintf("認証情報の更新に失敗しました: %v", err))
+		return
+	}
+
+	// 新しいユーザー名でセッションCookieを再発行
+	s.auth.SetSessionCookie(w, username)
+	s.renderAlert(w, "success", "ユーザー名とパスワードを正常に更新しました")
+}
+
+// Resend設定更新API (HTMX)
+func (s *Server) handleUpdateResendSettings(w http.ResponseWriter, r *http.Request) {
+	if err := r.ParseForm(); err != nil {
+		s.renderAlert(w, "error", "入力内容の解析に失敗しました")
+		return
+	}
+
+	apiKey := strings.TrimSpace(r.FormValue("resend_api_key"))
+	domain := strings.TrimSpace(r.FormValue("default_domain"))
+
+	if apiKey != "" {
+		if err := s.db.SetSetting("resend_api_key", apiKey); err != nil {
+			s.renderAlert(w, "error", fmt.Sprintf("APIキーの保存に失敗しました: %v", err))
+			return
+		}
+	}
+
+	if domain != "" {
+		if err := s.db.SetSetting("default_domain", domain); err != nil {
+			s.renderAlert(w, "error", fmt.Sprintf("ドメインの保存に失敗しました: %v", err))
+			return
+		}
+	}
+
+	s.renderAlert(w, "success", "Resend APIキーおよびドメイン設定を保存しました（再起動不要で即時反映）")
 }
 
 // 手動バックアップ実行API (HTMX)

@@ -9,6 +9,8 @@ import (
 	"strconv"
 	"strings"
 	"time"
+
+	"github.com/galdlore/resend-server/internal/db"
 )
 
 const (
@@ -17,26 +19,55 @@ const (
 )
 
 type Manager struct {
-	username string
-	password string
-	secret   []byte
+	db              *db.DB
+	defaultUsername string
+	defaultPassword string
+	secret          []byte
 }
 
-func NewManager(username, password, secret string) *Manager {
+func NewManager(database *db.DB, defaultUsername, defaultPassword, secret string) *Manager {
 	return &Manager{
-		username: username,
-		password: password,
-		secret:   []byte(secret),
+		db:              database,
+		defaultUsername: defaultUsername,
+		defaultPassword: defaultPassword,
+		secret:          []byte(secret),
 	}
+}
+
+// GetCredentials は現在の有効なユーザー名とパスワードを返します（DBのカスタム設定を優先）。
+func (m *Manager) GetCredentials() (string, string) {
+	username := m.defaultUsername
+	password := m.defaultPassword
+
+	if m.db != nil {
+		if u, err := m.db.GetSetting("admin_username"); err == nil && u != "" {
+			username = u
+		}
+		if p, err := m.db.GetSetting("admin_password"); err == nil && p != "" {
+			password = p
+		}
+	}
+	return username, password
+}
+
+// UpdateCredentials はDBに新しい認証情報を保存します。
+func (m *Manager) UpdateCredentials(newUsername, newPassword string) error {
+	if err := m.db.SetSetting("admin_username", newUsername); err != nil {
+		return fmt.Errorf("ユーザー名の保存に失敗しました: %w", err)
+	}
+	if err := m.db.SetSetting("admin_password", newPassword); err != nil {
+		return fmt.Errorf("パスワードの保存に失敗しました: %w", err)
+	}
+	return nil
 }
 
 // Authenticate はユーザー名とパスワードを検証します。
 func (m *Manager) Authenticate(username, password string) bool {
-	return username == m.username && password == m.password
+	validUser, validPass := m.GetCredentials()
+	return username == validUser && password == validPass
 }
 
 // CreateToken は改ざん防止のHMAC署名付きセッショントークンを生成します。
-// フォーマット: <username>:<expires_unix_timestamp>:<hmac_hex>
 func (m *Manager) CreateToken(username string) string {
 	expires := time.Now().Add(SessionDuration).Unix()
 	payload := fmt.Sprintf("%s:%d", username, expires)
@@ -56,7 +87,8 @@ func (m *Manager) ValidateToken(token string) bool {
 	}
 
 	username, expiresStr, signature := parts[0], parts[1], parts[2]
-	if username != m.username {
+	currentUsername, _ := m.GetCredentials()
+	if username != currentUsername {
 		return false
 	}
 
@@ -100,7 +132,6 @@ func (m *Manager) ClearSessionCookie(w http.ResponseWriter) {
 // Middleware は認証済みかどうかを検査し、未認証の場合はログインページへ誘導します。
 func (m *Manager) Middleware(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		// 静的アセットとログインページは認証をスキップ
 		path := r.URL.Path
 		if strings.HasPrefix(path, "/static/") || path == "/login" {
 			next.ServeHTTP(w, r)
@@ -109,7 +140,6 @@ func (m *Manager) Middleware(next http.Handler) http.Handler {
 
 		cookie, err := r.Cookie(SessionCookieName)
 		if err != nil || !m.ValidateToken(cookie.Value) {
-			// HTMXリクエストの場合はHX-Redirectで画面遷移を指示
 			if r.Header.Get("HX-Request") == "true" {
 				w.Header().Set("HX-Redirect", "/login")
 				w.WriteHeader(http.StatusUnauthorized)

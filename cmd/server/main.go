@@ -33,8 +33,8 @@ func main() {
 	log.Printf("データベースを初期化しました: %s", cfg.DatabasePath)
 
 	// 3. 各種サービスの初期化
-	authMgr := auth.NewManager(cfg.AdminUsername, cfg.AdminPassword, cfg.SessionSecret)
-	mailerClient := mailer.New(cfg.ResendAPIKey)
+	authMgr := auth.NewManager(database, cfg.AdminUsername, cfg.AdminPassword, cfg.SessionSecret)
+	mailerClient := mailer.New(database, cfg.ResendAPIKey)
 	backupSvc := backup.NewService(
 		database,
 		cfg.BackupEncryptionKey,

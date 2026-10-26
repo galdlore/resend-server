@@ -1,4 +1,80 @@
 {{define "content"}}
+<!-- Resend APIキーおよびドメイン設定 -->
+<div class="md-card">
+  <div class="md-card-header">
+    <h2 class="md-card-title">
+      <span class="material-symbols-outlined">key</span>
+      <span>Resend APIキー / ドメイン設定</span>
+    </h2>
+  </div>
+
+  <div id="resend-settings-result"></div>
+
+  <form hx-post="/api/settings/resend" hx-target="#resend-settings-result">
+    <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 1rem;">
+      <div class="md-form-group">
+        <label class="md-label" for="resend_api_key">Resend API キー</label>
+        <input class="md-input" type="password" id="resend_api_key" name="resend_api_key" placeholder="re_xxxxxxxxxxxxxxxxxxxx">
+        <div class="md-form-hint">
+          現在の設定: {{if .MaskedAPIKey}}<code>{{.MaskedAPIKey}}</code>{{else}}<span style="color: var(--md-sys-color-error);">未設定</span>{{end}} (変更する場合のみ入力)
+        </div>
+      </div>
+
+      <div class="md-form-group">
+        <label class="md-label" for="default_domain">デフォルトドメイン</label>
+        <input class="md-input" type="text" id="default_domain" name="default_domain" value="{{.DefaultDomain}}" placeholder="example.com">
+        <div class="md-form-hint">Cloudflare等で取得した送信対象ドメイン</div>
+      </div>
+    </div>
+
+    <div style="text-align: right; margin-top: 0.5rem;">
+      <button type="submit" class="md-btn md-btn-primary">
+        <span class="material-symbols-outlined">save</span>
+        <span>設定を保存（即時反映）</span>
+      </button>
+    </div>
+  </form>
+</div>
+
+<!-- ログイン認証情報変更 -->
+<div class="md-card">
+  <div class="md-card-header">
+    <h2 class="md-card-title">
+      <span class="material-symbols-outlined">badge</span>
+      <span>管理者アカウント設定（ID・パスワード変更）</span>
+    </h2>
+  </div>
+
+  <div id="credentials-result"></div>
+
+  <form hx-post="/api/settings/credentials" hx-target="#credentials-result">
+    <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 1rem;">
+      <div class="md-form-group">
+        <label class="md-label" for="username">ログインID (ユーザー名) *</label>
+        <input class="md-input" type="text" id="username" name="username" value="{{.CurrentUsername}}" required autocomplete="username">
+      </div>
+
+      <div class="md-form-group">
+        <label class="md-label" for="password">新しいパスワード *</label>
+        <input class="md-input" type="password" id="password" name="password" required autocomplete="new-password" placeholder="••••••••">
+      </div>
+
+      <div class="md-form-group">
+        <label class="md-label" for="confirm_password">新しいパスワード (確認) *</label>
+        <input class="md-input" type="password" id="confirm_password" name="confirm_password" required autocomplete="new-password" placeholder="••••••••">
+      </div>
+    </div>
+
+    <div style="text-align: right; margin-top: 0.5rem;">
+      <button type="submit" class="md-btn md-btn-tonal">
+        <span class="material-symbols-outlined">lock_reset</span>
+        <span>認証情報を更新</span>
+      </button>
+    </div>
+  </form>
+</div>
+
+<!-- Google Drive 暗号化バックアップ -->
 <div class="md-card">
   <div class="md-card-header">
     <h2 class="md-card-title">
@@ -42,6 +118,7 @@
   </div>
 </div>
 
+<!-- バックアップ実行履歴 -->
 <div class="md-card">
   <div class="md-card-header">
     <h2 class="md-card-title">
