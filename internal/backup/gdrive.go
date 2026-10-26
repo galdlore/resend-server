@@ -39,12 +39,14 @@ func NewService(database *db.DB, passphrase, serviceJSON, folderID string, inter
 
 // GetFolderID は現在有効なGoogle Drive保存先フォルダIDを返します。
 func (s *Service) GetFolderID() string {
+	raw := s.defaultFolderID
 	if s.db != nil {
 		if id, err := s.db.GetSetting("gdrive_folder_id"); err == nil && id != "" {
-			return id
+			raw = id
 		}
 	}
-	return s.defaultFolderID
+	raw = strings.TrimSpace(raw)
+	return strings.Trim(raw, "./ \t\r\n")
 }
 
 // GetPassphrase は現在有効なバックアップ暗号化パスフレーズを返します。
