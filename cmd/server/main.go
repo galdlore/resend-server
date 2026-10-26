@@ -34,6 +34,9 @@ func main() {
 
 	// 3. 各種サービスの初期化
 	authMgr := auth.NewManager(database, cfg.AdminUsername, cfg.AdminPassword, cfg.SessionSecret)
+	activeUser, _ := authMgr.GetCredentials()
+	log.Printf("ログイン用ユーザー名: %s", activeUser)
+
 	mailerClient := mailer.New(database, cfg.ResendAPIKey)
 	backupSvc := backup.NewService(
 		database,
