@@ -100,6 +100,13 @@ func (s *Server) RegisterRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("POST /api/settings/resend", s.handleUpdateResendSettings)
 	mux.HandleFunc("POST /api/settings/gdrive", s.handleUpdateGDriveSettings)
 	mux.HandleFunc("POST /api/settings/cleanup", s.handleCleanupDatabase)
+
+	// Google OAuth 連携
+	mux.HandleFunc("GET /auth/google/start", s.handleGoogleOAuthStart)
+	mux.HandleFunc("GET /auth/google/callback", s.handleGoogleOAuthCallback)
+	mux.HandleFunc("POST /api/settings/google-oauth-client", s.handleUpdateGoogleOAuthClient)
+	mux.HandleFunc("POST /api/settings/google-oauth-code", s.handleManualGoogleOAuthCode)
+	mux.HandleFunc("POST /api/settings/google-oauth-disconnect", s.handleGoogleOAuthDisconnect)
 }
 
 func (s *Server) getDefaultDomain() string {
@@ -348,6 +355,9 @@ func (s *Server) handleSettingsPage(w http.ResponseWriter, r *http.Request) {
 	dbSizeBytes, _ := s.db.GetDatabaseSize()
 	dbSizeKB := float64(dbSizeBytes) / 1024.0
 
+	redirectURI := fmt.Sprintf("http://%s/auth/google/callback", r.Host)
+	authURL, _ := s.backupSvc.GetAuthURL(redirectURI)
+
 	data := map[string]interface{}{
 		"Title":              "環境設定",
 		"IsLoggedIn":         true,
@@ -357,9 +367,14 @@ func (s *Server) handleSettingsPage(w http.ResponseWriter, r *http.Request) {
 		"MaskedAPIKey":       maskedAPIKey,
 		"DefaultDomain":      s.getDefaultDomain(),
 		"HasGDriveCreds":     s.backupSvc.HasCredentials(),
+		"IsOAuthConnected":   s.backupSvc.IsOAuthConnected(),
+		"AuthURL":            authURL,
+		"RedirectURI":        redirectURI,
 		"FolderID":           s.backupSvc.GetFolderID(),
 		"BackupIntervalMin":  s.cfg.BackupIntervalMinutes,
 		"DatabaseSizeKB":     fmt.Sprintf("%.1f", dbSizeKB),
+		"SuccessMsg":         r.URL.Query().Get("success"),
+		"ErrorMsg":           r.URL.Query().Get("error"),
 	}
 	_ = s.templates["settings"].ExecuteTemplate(w, "layout", data)
 }
@@ -531,4 +546,121 @@ func (s *Server) renderAlert(w http.ResponseWriter, alertType, message string) {
 
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
 	_, _ = w.Write([]byte(html))
+}
+
+// Google OAuth 認証開始
+func (s *Server) handleGoogleOAuthStart(w http.ResponseWriter, r *http.Request) {
+	redirectURI := fmt.Sprintf("http://%s/auth/google/callback", r.Host)
+	authURL, err := s.backupSvc.GetAuthURL(redirectURI)
+	if err != nil {
+		http.Redirect(w, r, fmt.Sprintf("/settings?error=%s", err.Error()), http.StatusSeeOther)
+		return
+	}
+	http.Redirect(w, r, authURL, http.StatusTemporaryRedirect)
+}
+
+// Google OAuth コールバック
+func (s *Server) handleGoogleOAuthCallback(w http.ResponseWriter, r *http.Request) {
+	errParam := r.URL.Query().Get("error")
+	if errParam != "" {
+		http.Redirect(w, r, fmt.Sprintf("/settings?error=Google認証が拒否されました: %s", errParam), http.StatusSeeOther)
+		return
+	}
+
+	code := r.URL.Query().Get("code")
+	if code == "" {
+		http.Redirect(w, r, "/settings?error=認可コードが受信できませんでした", http.StatusSeeOther)
+		return
+	}
+
+	redirectURI := fmt.Sprintf("http://%s/auth/google/callback", r.Host)
+	if err := s.backupSvc.ExchangeCode(r.Context(), code, redirectURI); err != nil {
+		http.Redirect(w, r, fmt.Sprintf("/settings?error=トークンの交換に失敗しました: %s", err.Error()), http.StatusSeeOther)
+		return
+	}
+
+	http.Redirect(w, r, "/settings?success=Google DriveとのOAuth連携が完了しました", http.StatusSeeOther)
+}
+
+// OAuthクライアント設定更新API (HTMX)
+func (s *Server) handleUpdateGoogleOAuthClient(w http.ResponseWriter, r *http.Request) {
+	if err := r.ParseForm(); err != nil {
+		s.renderAlert(w, "error", "入力内容の解析に失敗しました")
+		return
+	}
+
+	rawJSON := strings.TrimSpace(r.FormValue("oauth_client_json"))
+	clientID := strings.TrimSpace(r.FormValue("client_id"))
+	clientSecret := strings.TrimSpace(r.FormValue("client_secret"))
+
+	if rawJSON != "" {
+		// JSON妥当性確認
+		var testMap map[string]interface{}
+		if err := json.Unmarshal([]byte(rawJSON), &testMap); err != nil {
+			s.renderAlert(w, "error", "OAuthクライアント情報のJSON形式が不正です")
+			return
+		}
+		if err := s.db.SetSetting("google_oauth_client_json", rawJSON); err != nil {
+			s.renderAlert(w, "error", fmt.Sprintf("設定の保存に失敗しました: %v", err))
+			return
+		}
+	} else if clientID != "" && clientSecret != "" {
+		_ = s.db.SetSetting("google_client_id", clientID)
+		_ = s.db.SetSetting("google_client_secret", clientSecret)
+	} else {
+		s.renderAlert(w, "error", "OAuthクライアントJSONまたはClient ID/Secretを入力してください")
+		return
+	}
+
+	s.renderAlert(w, "success", "Google OAuthクライアント情報を保存しました。下の「Google Driveと連携」ボタンを押して認証を行ってください。")
+}
+
+// 認可コード手動入力API (HTMX)
+func (s *Server) handleManualGoogleOAuthCode(w http.ResponseWriter, r *http.Request) {
+	if err := r.ParseForm(); err != nil {
+		s.renderAlert(w, "error", "入力内容の解析に失敗しました")
+		return
+	}
+
+	rawInput := strings.TrimSpace(r.FormValue("auth_code"))
+	if rawInput == "" {
+		s.renderAlert(w, "error", "認可コードまたはリダイレクトURLを入力してください")
+		return
+	}
+
+	// URL全体が貼り付けられた場合、code=クエリパラメータを抽出
+	code := rawInput
+	if strings.Contains(rawInput, "code=") {
+		parts := strings.Split(rawInput, "code=")
+		if len(parts) > 1 {
+			code = parts[1]
+			if andIdx := strings.Index(code, "&"); andIdx != -1 {
+				code = code[:andIdx]
+			}
+		}
+	}
+
+	redirectURI := fmt.Sprintf("http://%s/auth/google/callback", r.Host)
+	// installedアプリ用リダイレクトURI（http://localhost）での交換も試行
+	err := s.backupSvc.ExchangeCode(r.Context(), code, redirectURI)
+	if err != nil {
+		// フォールバック: クライアント定義のURI（http://localhost）で試行
+		err = s.backupSvc.ExchangeCode(r.Context(), code, "http://localhost")
+	}
+
+	if err != nil {
+		s.renderAlert(w, "error", fmt.Sprintf("認可コードの検証に失敗しました: %v", err))
+		return
+	}
+
+	s.renderAlert(w, "success", "Google DriveとのOAuth連携が完了しました。常時自動バックアップが有効です。")
+}
+
+// OAuth連携解除API (HTMX)
+func (s *Server) handleGoogleOAuthDisconnect(w http.ResponseWriter, r *http.Request) {
+	if err := s.backupSvc.DisconnectOAuth(); err != nil {
+		s.renderAlert(w, "error", fmt.Sprintf("連携解除に失敗しました: %v", err))
+		return
+	}
+	s.renderAlert(w, "success", "Google DriveとのOAuth連携を解除しました")
 }

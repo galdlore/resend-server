@@ -133,7 +133,7 @@ func (m *Manager) ClearSessionCookie(w http.ResponseWriter) {
 func (m *Manager) Middleware(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		path := r.URL.Path
-		if strings.HasPrefix(path, "/static/") || path == "/login" {
+		if strings.HasPrefix(path, "/static/") || path == "/login" || strings.HasPrefix(path, "/auth/google/callback") {
 			next.ServeHTTP(w, r)
 			return
 		}
