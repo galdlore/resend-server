@@ -368,11 +368,12 @@ func (s *Server) getSettingsData(r *http.Request) map[string]interface{} {
 		"IsOAuthConnected":  s.backupSvc.IsOAuthConnected(),
 		"AuthURL":           authURL,
 		"RedirectURI":       redirectURI,
-		"FolderID":          s.backupSvc.GetFolderID(),
-		"BackupIntervalMin": s.cfg.BackupIntervalMinutes,
-		"DatabaseSizeKB":    fmt.Sprintf("%.1f", dbSizeKB),
-		"SuccessMsg":        r.URL.Query().Get("success"),
-		"ErrorMsg":          r.URL.Query().Get("error"),
+		"FolderID":             s.backupSvc.GetFolderID(),
+		"BackupIntervalMin":    s.backupSvc.GetIntervalMinutes(),
+		"BackupRetentionCount": s.backupSvc.GetRetentionCount(),
+		"DatabaseSizeKB":       fmt.Sprintf("%.1f", dbSizeKB),
+		"SuccessMsg":           r.URL.Query().Get("success"),
+		"ErrorMsg":             r.URL.Query().Get("error"),
 	}
 }
 
@@ -537,7 +538,28 @@ func (s *Server) handleUpdateGDriveSettings(w http.ResponseWriter, r *http.Reque
 		}
 	}
 
-	s.renderGDriveCard(w, r, "success", "Google Drive連携設定を保存しました（即時反映）")
+	intervalStr := strings.TrimSpace(r.FormValue("backup_interval_minutes"))
+	if intervalStr != "" {
+		if intervalMin, err := strconv.Atoi(intervalStr); err == nil && intervalMin >= 0 {
+			if err := s.db.SetSetting("backup_interval_minutes", intervalStr); err != nil {
+				s.renderGDriveCard(w, r, "error", fmt.Sprintf("バックアップ頻度の保存に失敗しました: %v", err))
+				return
+			}
+			s.backupSvc.UpdateInterval(intervalMin)
+		}
+	}
+
+	retentionStr := strings.TrimSpace(r.FormValue("backup_retention_count"))
+	if retentionStr != "" {
+		if retention, err := strconv.Atoi(retentionStr); err == nil && retention >= 0 {
+			if err := s.db.SetSetting("backup_retention_count", retentionStr); err != nil {
+				s.renderGDriveCard(w, r, "error", fmt.Sprintf("保持世代数の保存に失敗しました: %v", err))
+				return
+			}
+		}
+	}
+
+	s.renderGDriveCard(w, r, "success", "Google Drive連携設定を保存しました（世代管理・頻度を即時反映）")
 }
 
 // データベースクリーンアップ＆Vacuum実行API (HTMX)

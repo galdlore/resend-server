@@ -240,9 +240,9 @@
   </div>
   {{end}}
 
-  <!-- 基本設定: フォルダID & 暗号化パスフレーズ -->
+  <!-- 基本設定: フォルダID & 暗号化パスフレーズ & 世代管理 -->
   <form hx-post="/api/settings/gdrive" hx-target="#gdrive-settings-card" hx-swap="outerHTML" style="margin-bottom: 1.5rem;">
-    <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 1rem;">
+    <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 1rem; margin-bottom: 1rem;">
       <div class="md-form-group">
         <label class="md-label" for="gdrive_folder_id">保存先 Google Drive フォルダID *</label>
         <input class="md-input" type="text" id="gdrive_folder_id" name="gdrive_folder_id" value="{{.FolderID}}" placeholder="1RyVosz5IrAiz7bdJXL9LMtcnXd-ocfGZ">
@@ -254,12 +254,31 @@
         <input class="md-input" type="password" id="backup_encryption_key" name="backup_encryption_key" placeholder="変更する場合のみ入力">
         <div class="md-form-hint">AES-256-GCM暗号化で使用するパスフレーズ</div>
       </div>
+
+      <div class="md-form-group">
+        <label class="md-label" for="backup_interval_minutes">自動バックアップ頻度</label>
+        <select class="md-input" id="backup_interval_minutes" name="backup_interval_minutes">
+          <option value="1440" {{if eq .BackupIntervalMin 1440}}selected{{end}}>毎日 (24時間ごと)</option>
+          <option value="4320" {{if eq .BackupIntervalMin 4320}}selected{{end}}>3日ごと</option>
+          <option value="10080" {{if or (eq .BackupIntervalMin 10080) (not .BackupIntervalMin)}}selected{{end}}>毎週 (7日ごと) 【初期設定】</option>
+          <option value="20160" {{if eq .BackupIntervalMin 20160}}selected{{end}}>2週間ごと (14日ごと)</option>
+          <option value="43200" {{if eq .BackupIntervalMin 43200}}selected{{end}}>毎月 (30日ごと)</option>
+          <option value="0" {{if eq .BackupIntervalMin 0}}selected{{end}}>自動実行を停止 (手動のみ)</option>
+        </select>
+        <div class="md-form-hint">定期実行の同期間隔（保存時に即時反映）</div>
+      </div>
+
+      <div class="md-form-group">
+        <label class="md-label" for="backup_retention_count">保持世代数 (世代管理)</label>
+        <input class="md-input" type="number" min="0" max="100" id="backup_retention_count" name="backup_retention_count" value="{{if .BackupRetentionCount}}{{.BackupRetentionCount}}{{else}}10{{end}}">
+        <div class="md-form-hint">Google Drive上に残す世代数（初期値10、0で無制限）</div>
+      </div>
     </div>
 
     <div style="text-align: right;">
       <button type="submit" class="md-btn md-btn-tonal">
         <span class="material-symbols-outlined">save</span>
-        <span>フォルダID・暗号化設定を保存</span>
+        <span>バックアップ＆世代管理設定を保存</span>
       </button>
     </div>
   </form>

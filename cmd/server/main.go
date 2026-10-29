@@ -44,6 +44,7 @@ func main() {
 		cfg.GDriveServiceAccountJSON,
 		cfg.GDriveFolderID,
 		cfg.BackupIntervalMinutes,
+		cfg.BackupRetentionCount,
 	)
 
 	// 定期バックアップの開始

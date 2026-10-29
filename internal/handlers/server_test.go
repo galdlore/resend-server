@@ -37,7 +37,8 @@ func setupTestServer(t *testing.T) (*handlers.Server, *db.DB, func()) {
 		SessionSecret:          "test-secret-key-32-bytes-long!!",
 		AdminUsername:          "admin",
 		AdminPassword:          "password123",
-		BackupIntervalMinutes: 1440,
+		BackupIntervalMinutes: 10080,
+		BackupRetentionCount:  10,
 	}
 
 	authMgr := auth.NewManager(database, cfg.AdminUsername, cfg.AdminPassword, cfg.SessionSecret)
@@ -48,6 +49,7 @@ func setupTestServer(t *testing.T) (*handlers.Server, *db.DB, func()) {
 		cfg.GDriveServiceAccountJSON,
 		cfg.GDriveFolderID,
 		cfg.BackupIntervalMinutes,
+		cfg.BackupRetentionCount,
 	)
 
 	// templatesはプロジェクトルート相対のためカレントディレクトリを合わせる
@@ -201,5 +203,34 @@ func TestUpdateGoogleOAuthClientShowsAuthButton(t *testing.T) {
 	}
 	if !strings.Contains(body, "id=\"gdrive-settings-card\"") {
 		t.Errorf("返却されたHTMLがGoogle Driveカードではありません: %s", body)
+	}
+}
+
+func TestUpdateGDriveRetentionAndInterval(t *testing.T) {
+	server, _, cleanup := setupTestServer(t)
+	defer cleanup()
+
+	mux := http.NewServeMux()
+	server.RegisterRoutes(mux)
+
+	formData := url.Values{
+		"backup_interval_minutes": {"4320"},
+		"backup_retention_count":  {"7"},
+	}
+	req := httptest.NewRequest("POST", "/api/settings/gdrive", strings.NewReader(formData.Encode()))
+	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	rec := httptest.NewRecorder()
+	mux.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("POST /api/settings/gdrive 期待ステータス 200, 実際: %d", rec.Code)
+	}
+
+	body := rec.Body.String()
+	if !strings.Contains(body, "value=\"7\"") {
+		t.Errorf("返却されたカードに保持世代数 7 が反映されていません: %s", body)
+	}
+	if !strings.Contains(body, "value=\"4320\" selected") {
+		t.Errorf("返却されたカードにインターバル 4320 の選択状態が反映されていません: %s", body)
 	}
 }

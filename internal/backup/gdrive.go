@@ -9,7 +9,9 @@ import (
 	"log"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/galdlore/resend-server/internal/crypto"
@@ -26,16 +28,27 @@ type Service struct {
 	defaultFileJSON   string
 	defaultFolderID   string
 	intervalMin       int
+	retentionCount    int
+	intervalChan      chan int
 	stopChan          chan struct{}
+	mu                sync.Mutex
 }
 
-func NewService(database *db.DB, passphrase, serviceJSON, folderID string, intervalMin int) *Service {
+func NewService(database *db.DB, passphrase, serviceJSON, folderID string, intervalMin, retentionCount int) *Service {
+	if intervalMin <= 0 {
+		intervalMin = 10080
+	}
+	if retentionCount <= 0 {
+		retentionCount = 10
+	}
 	return &Service{
 		db:                database,
 		defaultPassphrase: passphrase,
 		defaultFileJSON:   serviceJSON,
 		defaultFolderID:   folderID,
 		intervalMin:       intervalMin,
+		retentionCount:    retentionCount,
+		intervalChan:      make(chan int, 1),
 		stopChan:          make(chan struct{}),
 	}
 }
@@ -60,6 +73,44 @@ func (s *Service) GetPassphrase() string {
 		}
 	}
 	return s.defaultPassphrase
+}
+
+// GetIntervalMinutes は現在有効なバックアップ間隔（分）を返します。0の場合は自動停止。
+func (s *Service) GetIntervalMinutes() int {
+	if s.db != nil {
+		if raw, err := s.db.GetSetting("backup_interval_minutes"); err == nil && raw != "" {
+			if v, err := strconv.Atoi(raw); err == nil && v >= 0 {
+				return v
+			}
+		}
+	}
+	return s.intervalMin
+}
+
+// GetRetentionCount は現在有効なバックアップ保持世代数を返します。0の場合は無制限。
+func (s *Service) GetRetentionCount() int {
+	if s.db != nil {
+		if raw, err := s.db.GetSetting("backup_retention_count"); err == nil && raw != "" {
+			if v, err := strconv.Atoi(raw); err == nil && v >= 0 {
+				return v
+			}
+		}
+	}
+	return s.retentionCount
+}
+
+// UpdateInterval はバックアップ間隔を動的に変更してスケジューラに通知します。
+func (s *Service) UpdateInterval(newIntervalMin int) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.intervalMin = newIntervalMin
+	select {
+	case s.intervalChan <- newIntervalMin:
+	default:
+		// すでに待機中の場合は最新値で上書き
+		<-s.intervalChan
+		s.intervalChan <- newIntervalMin
+	}
 }
 
 // GetOAuthConfig は登録されているOAuthクライアントJSONまたはID/Secretからoauth2.Configを生成します。
@@ -274,27 +325,94 @@ func (s *Service) PerformBackup(ctx context.Context) error {
 	}
 
 	log.Printf("Google Driveへの暗号化バックアップが完了しました: %s (ID: %s, サイズ: %d バイト)", uploadFileName, resFile.Id, len(encBytes))
+
+	// 6. 世代管理（保持世代数を超過した古いバックアップを自動削除）
+	retention := s.GetRetentionCount()
+	if retention > 0 {
+		if err := s.cleanOldBackups(ctx, driveService, folderID, retention); err != nil {
+			log.Printf("世代管理クリーンアップ実行中にエラー: %v", err)
+		}
+	}
+
+	return nil
+}
+
+// cleanOldBackups はGoogle Driveの指定フォルダ内にあるバックアップを検索し、保持世代数を超過した古いファイルを削除します。
+func (s *Service) cleanOldBackups(ctx context.Context, driveService *drive.Service, folderID string, retention int) error {
+	if retention <= 0 {
+		return nil
+	}
+
+	q := fmt.Sprintf("'%s' in parents and trashed = false and name contains 'resend_backup_' and name contains '.db.enc'", folderID)
+	fileList, err := driveService.Files.List().
+		Q(q).
+		OrderBy("createdTime desc").
+		Fields("files(id, name, createdTime)").
+		Context(ctx).
+		Do()
+	if err != nil {
+		return fmt.Errorf("古いバックアップ一覧の取得に失敗しました: %w", err)
+	}
+
+	if len(fileList.Files) <= retention {
+		return nil
+	}
+
+	toDelete := fileList.Files[retention:]
+	for _, f := range toDelete {
+		if err := driveService.Files.Delete(f.Id).Context(ctx).Do(); err != nil {
+			log.Printf("古いバックアップの削除に失敗しました (%s: %s): %v", f.Name, f.Id, err)
+		} else {
+			log.Printf("保持世代数(%d世代)を超過した古いバックアップをGoogle Driveから自動削除しました: %s (ID: %s)", retention, f.Name, f.Id)
+		}
+	}
+
 	return nil
 }
 
 // StartScheduler は定期バックアップをバックグラウンドで開始します。
 func (s *Service) StartScheduler() {
-	if s.intervalMin <= 0 {
-		return
-	}
-	ticker := time.NewTicker(time.Duration(s.intervalMin) * time.Minute)
 	go func() {
-		log.Printf("定期バックアップスケジューラを開始しました（間隔: %d分）", s.intervalMin)
+		currentMin := s.GetIntervalMinutes()
+		var ticker *time.Ticker
+		if currentMin > 0 {
+			ticker = time.NewTicker(time.Duration(currentMin) * time.Minute)
+			log.Printf("定期バックアップスケジューラを開始しました（間隔: %d分）", currentMin)
+		} else {
+			log.Println("定期バックアップは現在停止中（手動実行のみ）に設定されています")
+		}
+
+		defer func() {
+			if ticker != nil {
+				ticker.Stop()
+			}
+		}()
+
 		for {
+			var tickChan <-chan time.Time
+			if ticker != nil {
+				tickChan = ticker.C
+			}
+
 			select {
-			case <-ticker.C:
+			case <-tickChan:
 				ctx, cancel := context.WithTimeout(context.Background(), 5*time.Minute)
 				if err := s.PerformBackup(ctx); err != nil {
 					log.Printf("定期バックアップの実行中にエラーが発生しました: %v", err)
 				}
 				cancel()
+			case newMin := <-s.intervalChan:
+				if ticker != nil {
+					ticker.Stop()
+					ticker = nil
+				}
+				if newMin > 0 {
+					ticker = time.NewTicker(time.Duration(newMin) * time.Minute)
+					log.Printf("定期バックアップ間隔を更新しました（間隔: %d分）", newMin)
+				} else {
+					log.Println("定期バックアップを停止しました（手動実行のみ）")
+				}
 			case <-s.stopChan:
-				ticker.Stop()
 				return
 			}
 		}

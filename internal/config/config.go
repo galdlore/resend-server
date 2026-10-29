@@ -19,6 +19,7 @@ type Config struct {
 	GDriveServiceAccountJSON string
 	GDriveFolderID           string
 	BackupIntervalMinutes    int
+	BackupRetentionCount     int
 }
 
 func Load() *Config {
@@ -36,7 +37,8 @@ func Load() *Config {
 		BackupEncryptionKey:      getEnv("BACKUP_ENCRYPTION_KEY", "resend-backup-passphrase-change-me"),
 		GDriveServiceAccountJSON: getEnv("GDRIVE_SERVICE_ACCOUNT_JSON", "./data/gdrive-service-account.json"),
 		GDriveFolderID:           getEnv("GDRIVE_FOLDER_ID", ""),
-		BackupIntervalMinutes:    getEnvInt("BACKUP_INTERVAL_MINUTES", 1440),
+		BackupIntervalMinutes:    getEnvInt("BACKUP_INTERVAL_MINUTES", 10080),
+		BackupRetentionCount:     getEnvInt("BACKUP_RETENTION_COUNT", 10),
 	}
 
 	return cfg
