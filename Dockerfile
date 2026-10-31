@@ -1,5 +1,5 @@
-# マルチステージビルド
-FROM golang:alpine AS builder
+# マルチステージビルド（クロスコンパイル高速化のためビルダーはホスト環境で実行）
+FROM --platform=$BUILDPLATFORM golang:alpine AS builder
 
 WORKDIR /app
 
@@ -13,8 +13,10 @@ RUN go mod download
 
 COPY . .
 
-# CGO無効で静的バイナリをビルド（ARM64 / AMD64 両対応）
-RUN CGO_ENABLED=0 GOOS=linux go build -ldflags="-w -s" -o resend-server ./cmd/server
+# CGO無効でターゲット環境（ARM64 / ARMv7 / AMD64）向けに静的バイナリをクロスコンパイル
+ARG TARGETOS
+ARG TARGETARCH
+RUN CGO_ENABLED=0 GOOS=${TARGETOS:-linux} GOARCH=${TARGETARCH:-amd64} go build -ldflags="-w -s" -o resend-server ./cmd/server
 
 # 実行用軽量イメージ
 FROM alpine:3.21
