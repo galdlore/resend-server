@@ -302,3 +302,46 @@ func TestComposePage(t *testing.T) {
 		}
 	})
 }
+
+func TestHealthCheckAndStaticIcons(t *testing.T) {
+	server, database, cleanup := setupTestServer(t)
+	defer cleanup()
+
+	cfg := &config.Config{
+		AdminUsername: "admin",
+		AdminPassword: "password123",
+		SessionSecret: "test-secret-key-32-bytes-long!!",
+	}
+	authMgr := auth.NewManager(database, cfg.AdminUsername, cfg.AdminPassword, cfg.SessionSecret)
+
+	mux := http.NewServeMux()
+	server.RegisterRoutes(mux)
+	handlerWithAuth := authMgr.Middleware(mux)
+
+	endpoints := []struct {
+		name       string
+		path       string
+		wantStatus int
+	}{
+		{"ヘルスチェック /health", "/health", http.StatusOK},
+		{"ヘルスチェック /api/health", "/api/health", http.StatusOK},
+		{"ファビコン /favicon.ico", "/favicon.ico", http.StatusOK},
+		{"SVGアイコン /static/icon.svg", "/static/icon.svg", http.StatusOK},
+		{"PNGアイコン /static/icon.png", "/static/icon.png", http.StatusOK},
+		{"SVGメールアイコン /static/mail.svg", "/static/mail.svg", http.StatusOK},
+		{"PNGメールアイコン /static/mail.png", "/static/mail.png", http.StatusOK},
+		{"未認証アクセス保護 /", "/", http.StatusSeeOther},
+	}
+
+	for _, ep := range endpoints {
+		t.Run(ep.name, func(t *testing.T) {
+			req := httptest.NewRequest("GET", ep.path, nil)
+			rec := httptest.NewRecorder()
+			handlerWithAuth.ServeHTTP(rec, req)
+
+			if rec.Code != ep.wantStatus {
+				t.Errorf("%s 期待ステータス: %d, 実際: %d", ep.path, ep.wantStatus, rec.Code)
+			}
+		})
+	}
+}

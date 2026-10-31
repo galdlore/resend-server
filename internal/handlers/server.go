@@ -81,6 +81,9 @@ func (s *Server) RegisterRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("GET /login", s.handleLoginPage)
 	mux.HandleFunc("POST /login", s.handleLogin)
 	mux.HandleFunc("POST /logout", s.handleLogout)
+	mux.HandleFunc("GET /health", s.handleHealthCheck)
+	mux.HandleFunc("GET /api/health", s.handleHealthCheck)
+	mux.HandleFunc("GET /favicon.ico", s.handleFavicon)
 
 	// 要認証ルート
 	mux.HandleFunc("GET /{$}", s.handleComposePage)
@@ -113,6 +116,16 @@ func (s *Server) RegisterRoutes(mux *http.ServeMux) {
 
 func (s *Server) getDefaultDomain() string {
 	return s.db.GetSettingWithDefault("default_domain", s.cfg.DefaultDomain)
+}
+
+func (s *Server) handleHealthCheck(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusOK)
+	_, _ = w.Write([]byte(`{"status":"ok"}`))
+}
+
+func (s *Server) handleFavicon(w http.ResponseWriter, r *http.Request) {
+	http.ServeFile(w, r, "web/static/favicon.ico")
 }
 
 // ログイン・認証ハンドラー
