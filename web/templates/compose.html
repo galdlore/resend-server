@@ -1,22 +1,27 @@
 {{define "content"}}
 <!-- 受信メール解析アコーディオン -->
 <div class="md-card" style="margin-bottom: 1rem; border-style: dashed;">
-  <div style="display: flex; justify-content: space-between; align-items: center; cursor: pointer;" onclick="toggleParserPanel()">
+  <div style="display: flex; justify-content: space-between; align-items: center; cursor: pointer;"
+    onclick="toggleParserPanel()">
     <div style="display: flex; align-items: center; gap: 0.5rem; font-weight: 600; color: var(--md-sys-color-primary);">
       <span class="material-symbols-outlined">auto_fix_high</span>
       <span>Gmail等の受信メールソースから返信を自動設定</span>
     </div>
-    <span id="parser-toggle-icon" class="material-symbols-outlined" style="transition: transform 0.2s;">expand_more</span>
+    <span id="parser-toggle-icon" class="material-symbols-outlined"
+      style="transition: transform 0.2s;">expand_more</span>
   </div>
 
-  <div id="parser-panel" style="display: none; margin-top: 1rem; padding-top: 1rem; border-top: 1px solid var(--md-sys-color-outline-variant);">
+  <div id="parser-panel"
+    style="display: none; margin-top: 1rem; padding-top: 1rem; border-top: 1px solid var(--md-sys-color-outline-variant);">
     <p style="font-size: 0.85rem; color: var(--md-sys-color-on-surface-variant); margin-bottom: 0.75rem;">
       Gmailの「︙」メニューから「元のメッセージを表示」を開き、ヘッダーまたは全文をコピーして下に貼り付けてください。<br>
       送信元エイリアス、返信先宛先、Re: 件名、引用本文を自動抽出して下のフォームにセットします。
     </p>
 
     <div class="md-form-group">
-      <textarea id="raw-email-input" class="md-textarea" style="min-height: 100px; font-family: monospace; font-size: 0.8rem;" placeholder="Delivered-To: shopping@yourdomain.com&#10;From: &quot;Support&quot; <support@example.com>&#10;Subject: お問い合わせの件&#10;..."></textarea>
+      <textarea id="raw-email-input" class="md-textarea"
+        style="min-height: 100px; font-family: monospace; font-size: 0.8rem;"
+        placeholder="Delivered-To: shopping@yourdomain.com&#10;From: &quot;Support&quot; <support@example.com>&#10;Subject: お問い合わせの件&#10;..."></textarea>
     </div>
 
     <div id="parser-status" style="margin-bottom: 0.75rem;"></div>
@@ -51,26 +56,29 @@
         <select class="md-select" id="from_select" onchange="handleFromSelect(this)">
           <option value="">-- エイリアスを選択 または 下で直接入力 --</option>
           {{range .Aliases}}
-          <option value="{{.Address}}" data-name="{{.Name}}">{{.Address}} {{if .Name}}({{.Name}}){{end}}</option>
+          <option value="{{.Address}}" data-name="{{.Name}}" {{if eq $.FromAddress .Address}}selected{{end}}>
+            {{.Address}} {{if .Name}}({{.Name}}){{end}}</option>
           {{end}}
         </select>
       </div>
 
       <div class="md-form-group">
         <label class="md-label" for="from_address">送信元メールアドレス *</label>
-        <input class="md-input" type="email" id="from_address" name="from_address" required placeholder="contact@yourdomain.com">
+        <input class="md-input" type="email" id="from_address" name="from_address" value="{{.FromAddress}}" required
+          placeholder="contact@yourdomain.com">
       </div>
     </div>
 
     <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 1rem;">
       <div class="md-form-group">
         <label class="md-label" for="from_name">差出人名 (任意)</label>
-        <input class="md-input" type="text" id="from_name" name="from_name" placeholder="山田 太郎">
+        <input class="md-input" type="text" id="from_name" name="from_name" value="{{.FromName}}" placeholder="山田 太郎">
       </div>
 
       <div class="md-form-group">
         <label class="md-label" for="to_address">宛先メールアドレス (To) *</label>
-        <input class="md-input" type="email" id="to_address" name="to_address" required placeholder="support@service.example.com">
+        <input class="md-input" type="email" id="to_address" name="to_address" required
+          placeholder="support@service.example.com">
       </div>
     </div>
 
@@ -85,7 +93,8 @@
     </div>
 
     <div style="display: flex; align-items: center; justify-content: flex-end; gap: 1rem; margin-top: 1rem;">
-      <div id="send-spinner" class="htmx-indicator" style="align-items: center; gap: 0.5rem; color: var(--md-sys-color-primary);">
+      <div id="send-spinner" class="htmx-indicator"
+        style="align-items: center; gap: 0.5rem; color: var(--md-sys-color-primary);">
         <span class="material-symbols-outlined" style="animation: spin 1s linear infinite;">progress_activity</span>
         <span style="font-size: 0.9rem;">送信中...</span>
       </div>
@@ -98,91 +107,116 @@
 </div>
 
 <script>
-function handleFromSelect(sel) {
-  const addr = sel.value;
-  if (!addr) return;
-  document.getElementById('from_address').value = addr;
-  const opt = sel.options[sel.selectedIndex];
-  const name = opt.getAttribute('data-name');
-  if (name) {
-    document.getElementById('from_name').value = name;
-  }
-}
-
-function toggleParserPanel() {
-  const panel = document.getElementById('parser-panel');
-  const icon = document.getElementById('parser-toggle-icon');
-  if (panel.style.display === 'none') {
-    panel.style.display = 'block';
-    icon.style.transform = 'rotate(180deg)';
-  } else {
-    panel.style.display = 'none';
-    icon.style.transform = 'rotate(0deg)';
-  }
-}
-
-async function parseEmailSource() {
-  const rawInput = document.getElementById('raw-email-input').value;
-  const statusEl = document.getElementById('parser-status');
-
-  if (!rawInput.trim()) {
-    statusEl.innerHTML = '<div class="md-alert md-alert-error" style="padding: 0.5rem 1rem; font-size: 0.85rem;"><span class="material-symbols-outlined">error</span><span>メールソースを入力してください</span></div>';
-    return;
-  }
-
-  statusEl.innerHTML = '<span style="font-size: 0.85rem; color: var(--md-sys-color-outline);">解析中...</span>';
-
-  try {
-    const formData = new URLSearchParams();
-    formData.append('raw_email', rawInput);
-
-    const resp = await fetch('/api/parse-email', {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/x-www-form-urlencoded',
-      },
-      body: formData.toString()
-    });
-
-    if (!resp.ok) {
-      const errText = await resp.text();
-      statusEl.innerHTML = `<div class="md-alert md-alert-error" style="padding: 0.5rem 1rem; font-size: 0.85rem;"><span class="material-symbols-outlined">error</span><span>${errText}</span></div>`;
-      return;
-    }
-
-    const data = await resp.json();
-
-    // フォームへの反映
-    if (data.to_address) {
-      document.getElementById('to_address').value = data.to_address;
-    }
-    if (data.from_address) {
-      document.getElementById('from_address').value = data.from_address;
-      // セレクトボックスに該当エイリアスがあれば自動選択
-      const sel = document.getElementById('from_select');
-      for (let i = 0; i < sel.options.length; i++) {
-        if (sel.options[i].value.toLowerCase() === data.from_address.toLowerCase()) {
-          sel.selectedIndex = i;
-          break;
+  document.addEventListener('DOMContentLoaded', function () {
+    const params = new URLSearchParams(window.location.search);
+    const fromParam = params.get('from');
+    if (fromParam) {
+      const fromAddress = document.getElementById('from_address');
+      if (fromAddress && !fromAddress.value) {
+        fromAddress.value = fromParam;
+      }
+      const fromSelect = document.getElementById('from_select');
+      if (fromSelect && (!fromSelect.value || fromSelect.value.toLowerCase() !== fromParam.toLowerCase())) {
+        for (let i = 0; i < fromSelect.options.length; i++) {
+          if (fromSelect.options[i].value.toLowerCase() === fromParam.toLowerCase()) {
+            fromSelect.selectedIndex = i;
+            handleFromSelect(fromSelect);
+            break;
+          }
         }
       }
     }
-    if (data.subject) {
-      document.getElementById('subject').value = data.subject;
+  });
+
+  function handleFromSelect(sel) {
+    const addr = sel.value;
+    if (!addr) return;
+    document.getElementById('from_address').value = addr;
+    const opt = sel.options[sel.selectedIndex];
+    const name = opt.getAttribute('data-name');
+    if (name) {
+      document.getElementById('from_name').value = name;
     }
-    if (data.quoted_body) {
-      const bodyEl = document.getElementById('body');
-      bodyEl.value = (bodyEl.value ? bodyEl.value + '\n' : '') + data.quoted_body;
+  }
+
+  function toggleParserPanel() {
+    const panel = document.getElementById('parser-panel');
+    const icon = document.getElementById('parser-toggle-icon');
+    if (panel.style.display === 'none') {
+      panel.style.display = 'block';
+      icon.style.transform = 'rotate(180deg)';
+    } else {
+      panel.style.display = 'none';
+      icon.style.transform = 'rotate(0deg)';
+    }
+  }
+
+  async function parseEmailSource() {
+    const rawInput = document.getElementById('raw-email-input').value;
+    const statusEl = document.getElementById('parser-status');
+
+    if (!rawInput.trim()) {
+      statusEl.innerHTML = '<div class="md-alert md-alert-error" style="padding: 0.5rem 1rem; font-size: 0.85rem;"><span class="material-symbols-outlined">error</span><span>メールソースを入力してください</span></div>';
+      return;
     }
 
-    statusEl.innerHTML = '<div class="md-alert md-alert-success" style="padding: 0.5rem 1rem; font-size: 0.85rem;"><span class="material-symbols-outlined">check_circle</span><span>送信元エイリアス、宛先、件名、引用本文を自動反映しました</span></div>';
-  } catch (err) {
-    statusEl.innerHTML = `<div class="md-alert md-alert-error" style="padding: 0.5rem 1rem; font-size: 0.85rem;"><span class="material-symbols-outlined">error</span><span>通信エラーが発生しました: ${err.message}</span></div>`;
+    statusEl.innerHTML = '<span style="font-size: 0.85rem; color: var(--md-sys-color-outline);">解析中...</span>';
+
+    try {
+      const formData = new URLSearchParams();
+      formData.append('raw_email', rawInput);
+
+      const resp = await fetch('/api/parse-email', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/x-www-form-urlencoded',
+        },
+        body: formData.toString()
+      });
+
+      if (!resp.ok) {
+        const errText = await resp.text();
+        statusEl.innerHTML = `<div class="md-alert md-alert-error" style="padding: 0.5rem 1rem; font-size: 0.85rem;"><span class="material-symbols-outlined">error</span><span>${errText}</span></div>`;
+        return;
+      }
+
+      const data = await resp.json();
+
+      // フォームへの反映
+      if (data.to_address) {
+        document.getElementById('to_address').value = data.to_address;
+      }
+      if (data.from_address) {
+        document.getElementById('from_address').value = data.from_address;
+        // セレクトボックスに該当エイリアスがあれば自動選択
+        const sel = document.getElementById('from_select');
+        for (let i = 0; i < sel.options.length; i++) {
+          if (sel.options[i].value.toLowerCase() === data.from_address.toLowerCase()) {
+            sel.selectedIndex = i;
+            break;
+          }
+        }
+      }
+      if (data.subject) {
+        document.getElementById('subject').value = data.subject;
+      }
+      if (data.quoted_body) {
+        const bodyEl = document.getElementById('body');
+        bodyEl.value = (bodyEl.value ? bodyEl.value + '\n' : '') + data.quoted_body;
+      }
+
+      statusEl.innerHTML = '<div class="md-alert md-alert-success" style="padding: 0.5rem 1rem; font-size: 0.85rem;"><span class="material-symbols-outlined">check_circle</span><span>送信元エイリアス、宛先、件名、引用本文を自動反映しました</span></div>';
+    } catch (err) {
+      statusEl.innerHTML = `<div class="md-alert md-alert-error" style="padding: 0.5rem 1rem; font-size: 0.85rem;"><span class="material-symbols-outlined">error</span><span>通信エラーが発生しました: ${err.message}</span></div>`;
+    }
   }
-}
 </script>
 
 <style>
-@keyframes spin { 100% { transform: rotate(360deg); } }
+  @keyframes spin {
+    100% {
+      transform: rotate(360deg);
+    }
+  }
 </style>
 {{end}}

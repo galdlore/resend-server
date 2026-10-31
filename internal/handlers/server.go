@@ -160,12 +160,26 @@ func (s *Server) handleComposePage(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	fromAddress := strings.TrimSpace(r.URL.Query().Get("from"))
+	var fromName string
+	if fromAddress != "" {
+		for _, a := range aliases {
+			if strings.EqualFold(a.Address, fromAddress) {
+				fromAddress = a.Address
+				fromName = a.Name
+				break
+			}
+		}
+	}
+
 	data := map[string]interface{}{
 		"Title":         "メール作成",
 		"IsLoggedIn":    true,
 		"ActiveNav":     "compose",
 		"Aliases":       aliases,
 		"DefaultDomain": s.getDefaultDomain(),
+		"FromAddress":   fromAddress,
+		"FromName":      fromName,
 	}
 	_ = s.templates["compose"].ExecuteTemplate(w, "layout", data)
 }

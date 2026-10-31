@@ -13,7 +13,8 @@
     <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 1rem;">
       <div class="md-form-group">
         <label class="md-label" for="new_address">メールアドレス *</label>
-        <input class="md-input" type="email" id="new_address" name="address" required placeholder="service@yourdomain.com">
+        <input class="md-input" type="email" id="new_address" name="address" required
+          placeholder="service@yourdomain.com">
       </div>
 
       <div class="md-form-group">
@@ -66,39 +67,42 @@
 {{end}}
 
 {{define "aliases_rows"}}
-  {{range .Aliases}}
-  <tr id="alias-row-{{.ID}}">
-    <td>
-      <strong style="color: var(--md-sys-color-primary);">{{.Address}}</strong>
-    </td>
-    <td>{{if .Name}}{{.Name}}{{else}}<span style="color: var(--md-sys-color-outline);">-</span>{{end}}</td>
-    <td>{{if .Note}}{{.Note}}{{else}}<span style="color: var(--md-sys-color-outline);">-</span>{{end}}</td>
-    <td>
-      {{if .IsActive}}
-      <span class="md-badge md-badge-success">有効</span>
-      {{else}}
-      <span class="md-badge md-badge-neutral">無効</span>
-      {{end}}
-    </td>
-    <td style="font-size: 0.85rem; color: var(--md-sys-color-outline);">
-      {{.CreatedAt.Format "2006-01-02 15:04"}}
-    </td>
-    <td>
-      <div style="display: flex; gap: 0.5rem;">
-        <button class="md-btn-icon" title="このエイリアスでメール作成" onclick="location.href='/?from={{.Address}}'">
-          <span class="material-symbols-outlined" style="font-size: 1.1rem; color: var(--md-sys-color-primary);">outgoing_mail</span>
+{{range .Aliases}}
+<tr id="alias-row-{{.ID}}">
+  <td>
+    <strong style="color: var(--md-sys-color-primary);">{{.Address}}</strong>
+  </td>
+  <td>{{if .Name}}{{.Name}}{{else}}<span style="color: var(--md-sys-color-outline);">-</span>{{end}}</td>
+  <td>{{if .Note}}{{.Note}}{{else}}<span style="color: var(--md-sys-color-outline);">-</span>{{end}}</td>
+  <td>
+    {{if .IsActive}}
+    <span class="md-badge md-badge-success">有効</span>
+    {{else}}
+    <span class="md-badge md-badge-neutral">無効</span>
+    {{end}}
+  </td>
+  <td style="font-size: 0.85rem; color: var(--md-sys-color-outline);">
+    {{.CreatedAt.Format "2006-01-02 15:04"}}
+  </td>
+  <td>
+    <div style="display: flex; gap: 0.5rem;">
+        <button class="md-btn-icon" title="このエイリアスでメール作成" onclick="location.href='/?from={{.Address | urlquery}}'">
+          <span class="material-symbols-outlined"
+            style="font-size: 1.1rem; color: var(--md-sys-color-primary);">outgoing_mail</span>
         </button>
-        <button class="md-btn-icon" title="削除" hx-delete="/api/aliases/{{.ID}}" hx-target="#alias-row-{{.ID}}" hx-swap="outerHTML" hx-confirm="このエイリアスを削除してよろしいですか？">
-          <span class="material-symbols-outlined" style="font-size: 1.1rem; color: var(--md-sys-color-error);">delete</span>
+        <button class="md-btn-icon" title="削除" hx-delete="/api/aliases/{{.ID}}" hx-target="#alias-row-{{.ID}}"
+          hx-swap="outerHTML" hx-confirm="このエイリアスを削除してよろしいですか？">
+          <span class="material-symbols-outlined"
+            style="font-size: 1.1rem; color: var(--md-sys-color-error);">delete</span>
         </button>
-      </div>
-    </td>
-  </tr>
-  {{else}}
-  <tr>
-    <td colspan="6" style="text-align: center; color: var(--md-sys-color-outline); padding: 2rem;">
-      登録されているエイリアスはありません
-    </td>
-  </tr>
-  {{end}}
+    </div>
+  </td>
+</tr>
+{{else}}
+<tr>
+  <td colspan="6" style="text-align: center; color: var(--md-sys-color-outline); padding: 2rem;">
+    登録されているエイリアスはありません
+  </td>
+</tr>
+{{end}}
 {{end}}

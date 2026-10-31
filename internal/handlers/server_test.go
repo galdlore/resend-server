@@ -234,3 +234,71 @@ func TestUpdateGDriveRetentionAndInterval(t *testing.T) {
 		t.Errorf("返却されたカードにインターバル 4320 の選択状態が反映されていません: %s", body)
 	}
 }
+
+func TestComposePage(t *testing.T) {
+	server, database, cleanup := setupTestServer(t)
+	defer cleanup()
+
+	// エイリアスを登録
+	_, err := database.CreateAlias("support@example.com", "サポート窓口", "サポート対応用")
+	if err != nil {
+		t.Fatalf("エイリアス登録失敗: %v", err)
+	}
+
+	mux := http.NewServeMux()
+	server.RegisterRoutes(mux)
+
+	t.Run("クエリパラメータなし", func(t *testing.T) {
+		req := httptest.NewRequest("GET", "/", nil)
+		rec := httptest.NewRecorder()
+		mux.ServeHTTP(rec, req)
+
+		if rec.Code != http.StatusOK {
+			t.Fatalf("GET / 期待ステータス 200, 実際: %d", rec.Code)
+		}
+
+		body := rec.Body.String()
+		if !strings.Contains(body, "value=\"support@example.com\"") {
+			t.Errorf("セレクトボックスにエイリアスが含まれていません")
+		}
+		if strings.Contains(body, "name=\"from_address\" value=\"support@example.com\"") {
+			t.Errorf("クエリパラメータなしでfrom_addressに値が設定されています")
+		}
+	})
+
+	t.Run("クエリパラメータfrom指定（登録済みエイリアス）", func(t *testing.T) {
+		req := httptest.NewRequest("GET", "/?from=support@example.com", nil)
+		rec := httptest.NewRecorder()
+		mux.ServeHTTP(rec, req)
+
+		if rec.Code != http.StatusOK {
+			t.Fatalf("GET /?from=... 期待ステータス 200, 実際: %d", rec.Code)
+		}
+
+		body := rec.Body.String()
+		if !strings.Contains(body, "name=\"from_address\" value=\"support@example.com\"") {
+			t.Errorf("from_address inputに指定アドレスが反映されていません: %s", body)
+		}
+		if !strings.Contains(body, "name=\"from_name\" value=\"サポート窓口\"") {
+			t.Errorf("from_name inputにエイリアスの表示名が反映されていません: %s", body)
+		}
+		if !strings.Contains(body, "value=\"support@example.com\" data-name=\"サポート窓口\" selected") {
+			t.Errorf("セレクトボックスの該当optionがselectedになっていません: %s", body)
+		}
+	})
+
+	t.Run("クエリパラメータfrom指定（未登録アドレス）", func(t *testing.T) {
+		req := httptest.NewRequest("GET", "/?from=other@example.com", nil)
+		rec := httptest.NewRecorder()
+		mux.ServeHTTP(rec, req)
+
+		if rec.Code != http.StatusOK {
+			t.Fatalf("GET /?from=... 期待ステータス 200, 実際: %d", rec.Code)
+		}
+
+		body := rec.Body.String()
+		if !strings.Contains(body, "name=\"from_address\" value=\"other@example.com\"") {
+			t.Errorf("from_address inputに未登録アドレスが反映されていません: %s", body)
+		}
+	})
+}
